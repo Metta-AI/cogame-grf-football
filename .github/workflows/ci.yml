@@ -248,6 +248,83 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------
+  # The OTHER half of the determinism gate: the replay the shipped image just
+  # recorded must be reproducible, tick for tick, by a from-scratch NATIVE
+  # re-simulation of the same source. wasm-viewer proves the wasm32 build
+  # agrees; this proves the RECORDING does — which is the claim that breaks
+  # when the server mutates hashed state outside sim.step. Running both
+  # against the same bytes says which side a divergence is on.
+  # ---------------------------------------------------------------------
+  replay-rehash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: docker-smoke
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache nimby toolchain and nimcache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nimby
+            ~/.cache/nim
+          key: nimby-${{ runner.os }}-${{ env.NIMBY_VERSION }}-${{ env.NIM_VERSION }}-${{ hashFiles('nimby.lock') }}
+          restore-keys: |
+            nimby-${{ runner.os }}-${{ env.NIMBY_VERSION }}-${{ env.NIM_VERSION }}-
+
+      - name: Install nimby and Nim
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          arch="$(dpkg --print-architecture)"
+          case "$arch" in
+            amd64) asset="nimby-Linux-X64" ;;
+            arm64) asset="nimby-Linux-ARM64" ;;
+            *) echo "::error::unsupported runner arch: $arch"; exit 1 ;;
+          esac
+          curl -fsSL -o "$HOME/.local/bin/nimby" \
+            "https://github.com/treeform/nimby/releases/download/${NIMBY_VERSION}/${asset}"
+          chmod +x "$HOME/.local/bin/nimby"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.nimby/nim/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/nimby" use "$NIM_VERSION"
+
+      - name: Sync Nim dependencies
+        run: nimby --global sync nimby.lock
+
+      - name: Regenerate nim.cfg from the synced package tree
+        run: |
+          set -euo pipefail
+          rm -f nim.cfg
+          for pkg in "$HOME"/.nimby/pkgs/*; do
+            [ -e "$pkg" ] || continue
+            if [ -d "$pkg/src" ]; then
+              echo "--path:\"$pkg/src\"" >> nim.cfg
+            else
+              echo "--path:\"$pkg\"" >> nim.cfg
+            fi
+          done
+          echo '--path:"src"' >> nim.cfg
+
+      - name: Download the smoke replay
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke-replay
+          path: dist/smoke
+
+      - name: The recording re-simulates natively, tick for tick
+        run: |
+          set -euo pipefail
+          replay=""
+          for candidate in dist/smoke/*.replay dist/smoke/replay.json; do
+            if [ -f "${candidate}" ]; then replay="${candidate}"; break; fi
+          done
+          test -n "${replay}" || {
+            echo "::error::docker-smoke uploaded no replay"; exit 1; }
+          nim r --hints:off -d:release --path:src \
+            tools/ci/rehash_probe.nim "${replay}"
+
+  # ---------------------------------------------------------------------
   # The static replay viewer. The platform serves THIS bundle from
   # /v2/coworlds/replays/static/<cow_id>/<sha>/index.html, so a bundle that
   # does not build (or is missing its wasm) means every hosted replay hangs.
@@ -397,11 +474,24 @@ jobs:
       # code, never the fixture.
       # -----------------------------------------------------------------
       - name: Native/wasm determinism gate
+        # 4000 frames, not 300: the chain is checked EVERY tick, so a gate that
+        # stops at 300 proves only that the first twelve seconds agree. A real
+        # divergence found in the viewer console at tick 1316 was invisible to
+        # the shallow gate. Both replays are walked: the fixture the `test` job
+        # recorded from a native build of this commit, and the one the raw
+        # Docker episode produced from the shipped image.
         run: |
           set -euo pipefail
           test -s tests/fixtures/grf-679961.replay
           node tools/wasm_replay_smoke.cjs \
-            dist/static-replay-viewer tests/fixtures/grf-679961.replay 300
+            dist/static-replay-viewer tests/fixtures/grf-679961.replay 4000
+          replay=""
+          for candidate in dist/smoke/*.replay dist/smoke/replay.json; do
+            if [ -f "${candidate}" ]; then replay="${candidate}"; break; fi
+          done
+          test -n "${replay}"
+          node tools/wasm_replay_smoke.cjs \
+            dist/static-replay-viewer "${replay}" 4000
 
       - name: Upload the bundle
         uses: actions/upload-artifact@v4
