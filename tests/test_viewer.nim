@@ -113,6 +113,16 @@ proc everyBeatKindHasCss() =
   doAssert "aria-label" in appended, "every beat marker is labelled"
   doAssert "CTX.send('s:' + tick)" in appended,
     "clicking a beat seeks to its tick"
+  # The UP-FRONT timeline (replays.nim ships it in `state.beats`) must be
+  # drawable: every scrubber-beat kind needs a branch in fbFrame's timeline
+  # loop, or that marker only appears once the playhead has passed it live.
+  for kind in BeatKinds:
+    doAssert ("b.k === '" & kind & "'") in appended,
+      "fbFrame's timeline loop cannot draw the beat kind " & kind
+  # And nothing else: `drop` is a feed row, not a marker, so it must not be in
+  # the timeline either (see the filter in replays.nim).
+  doAssert "b.k === 'drop'" notin appended,
+    "drop has no marker and no CSS; it must not be in the beat timeline"
   report "every emitted beat kind has a CSS rule and seeks on click"
 
 proc tinyAndPlateNameRules() =

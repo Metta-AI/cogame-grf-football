@@ -398,7 +398,17 @@ proc advanceReplayScan*(replay: var ReplayPlayer, maxTicks: int) =
     var stepBeats = newJArray()
     scan.sim.stepEvents(scan.beatTracker, stepBeats)
     for event in stepBeats:
-      if event["k"].getStr() in ["goal", "drop", "gameover"]:
+      # The UP-FRONT beat timeline is exactly the note's scrubber-beat set, so
+      # every marker is on the scrubber the moment the replay loads instead of
+      # appearing only once the playhead has passed it. Two rules:
+      #   * `shot` only when it was on target, as the live path does;
+      #   * NOT `drop` — the page draws no marker for it (it is a feed row), and
+      #     a beat kind with no marker and no CSS rule is dead weight in the
+      #     bytes. `scan.beatTicks` below still counts a drop, because that is
+      #     the lull detector, not the scrubber.
+      let kind = event["k"].getStr()
+      if kind in ["gamestart", "goal", "save", "foul", "halftime", "gameover"] or
+          (kind == "shot" and event{"onTarget"}.getBool()):
         replay.beatEvents.add(event)
     for event in stepBeats:
       if event["k"].getStr() in ["goal", "drop", "save", "shot", "gameover"]:
