@@ -139,13 +139,27 @@ proc keeperCatchesAndParries() =
     sim.ball.y = CentreY
     sim.ball.vx = 1_041_666'i32        ## 25 m/s, over the catch cap
     sim.ball.vy = 0
+    # A ball over the catch cap is PARRIED, and the keeper may then legitimately
+    # gather the rebound on a LATER SUBSTEP OF THE SAME TICK — which it does in
+    # this fixture, so `restartKind != rkGoalKick` is not a true statement about
+    # the sim and `speedOf(ball) <= KeeperParryCap` is satisfied trivially by the
+    # gathered (v = 0) ball. Neither one can tell a parry from a catch. The
+    # event stream can: the sim emits Save with content "parry" or "catch", so
+    # that is what the parry block asserts.
+    sim.collectEvents = true
+    sim.events.setLen(0)
     sim.stepIdle()
-    # A ball over the catch cap is PARRIED — its speed is capped, not zeroed —
-    # and the keeper may then legitimately gather the rebound on a later
-    # substep, which is why the restart kind is not what this asserts.
+    var parried = false
+    var parrySpeed = high(int32)
+    for event in sim.events:
+      if event.kind == Save and event.content == "parry":
+        parried = true
+        parrySpeed = event.speed          ## the speed AT the parry, capped
+    doAssert parried,
+      "a 25 m/s ball inside the area is PARRIED, not caught: no parry event"
     doAssert sim.teamStats[Blue].saves >= 1, "the parry is credited as a save"
-    doAssert speedOf(sim.ball.vx, sim.ball.vy) <= KeeperParryCap + 1,
-      "a parry caps the ball at " & $KeeperParryCap
+    doAssert parrySpeed > 0 and parrySpeed <= KeeperParryCap + 1,
+      "a parry caps the ball at " & $KeeperParryCap & ", got " & $parrySpeed
     doAssert sim.goals(Red) == 0, "a parried shot is not a goal"
   report "the keeper catches at 14 m/s and parries at 25 m/s"
 

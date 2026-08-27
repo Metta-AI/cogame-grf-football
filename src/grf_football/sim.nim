@@ -834,8 +834,12 @@ proc resolveBallCogs(sim: var SimServer) =
         sim.ball.vx = vx
         sim.ball.vy = vy
         inc sim.teamStats[team].saves
+        # The parry carries the ball's speed AFTER the cap: a later substep of
+        # this same tick may legitimately gather the rebound, and then nothing
+        # in end-of-tick state can say whether the ball was parried or caught.
         sim.emitEvent(Save, source = best, team = ord(team),
-          x = sim.ball.x, y = sim.ball.y, content = "parry")
+          x = sim.ball.x, y = sim.ball.y, speed = speedOf(vx, vy),
+          content = "parry")
         sim.arcs.add ArcFx(x0: sim.ball.x, y0: sim.ball.y,
           x1: sim.ball.x, y1: sim.ball.y, tick: int32(sim.tickCount),
           team: int32(ord(team)), kind: 2)
