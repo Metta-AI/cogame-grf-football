@@ -31,20 +31,45 @@ proc ballInOwnHalf*(sim: SimServer, team: Team): bool {.inline.} =
 proc ballPastHalfway*(sim: SimServer, team: Team): bool {.inline.} =
   not sim.ballInOwnHalf(team)
 
-proc onBallFor(sim: SimServer, index: int, shootRange: int32): OnBall =
+proc onBallFor(sim: SimServer, index: int, shootRange,
+    pressureRadius: int32): OnBall =
   let
     team = teamOfCog(index)
     gx = targetGoalX(team)
     goalDist = distI(gx - sim.cogs[index].x, CentreY - sim.cogs[index].y)
   if goalDist <= shootRange:
     return obShoot
-  if sim.nearestOpponentDist(index) < 2_500_000'i32:
+  if sim.nearestOpponentDist(index) < pressureRadius:
     return obPassShort
   obDribble
 
-proc zonalDirective*(sim: SimServer, seat: int, turn: int): Directive =
+type
+  ZonalParams* = object
+    ## `zonal`'s three free parameters. They are NOT guessed: the grid harness
+    ## `tools/tune_baselines.nim` sweeps them and `docs/tuning/baseline-grid.md`
+    ## is the committed sweep, with the train and holdout tables and the winner.
+    ## Re-run the harness after any physics change; the numbers below are only
+    ## as good as the sim they were measured on.
+    pressRadius*: int32      ## press when the opponent has the ball this near
+    shootRange*: int32       ## `on_ball = shoot` inside this range of the goal
+    pressureRadius*: int32   ## an opponent this near forces `pass_short`
+
+const
+  ZonalTuned* = ZonalParams(
+    pressRadius: 12_000_000'i32,
+    shootRange: 16_000_000'i32,
+    pressureRadius: 1_500_000'i32)
+    ## The harness's winner over 60 grid points and 240 full-length matches:
+    ## train goal difference +5 against `gegenpress` and +8 on the holdout
+    ## seeds, against -1 / +2 for the guessed 15/20/2.5 point the design note
+    ## names. See docs/tuning/baseline-grid.md for the method and the table.
+
+proc zonalDirectiveWith*(sim: SimServer, seat: int, turn: int,
+    params: ZonalParams): Directive =
   ## The reference shape: hold the zone, support the ball, press when it is
   ## near and in the other side's possession, and go and win a loose ball.
+  ## Parameterised so the grid harness can sweep it; `zonalDirective` below is
+  ## this proc at the tuned point, and is what the game runs.
   result = emptyDirective(seat)
   result.turn = int32(turn)
   result.half = sim.half
@@ -73,14 +98,19 @@ proc zonalDirective*(sim: SimServer, seat: int, turn: int): Directive =
     else:
       order.intent = inSupport
       order.say = "square on"
-  elif sim.distToBall(index) <= 15_000_000'i32:
+  elif sim.distToBall(index) <= params.pressRadius:
     order.intent = inPress
     order.say = "closing"
   else:
     order.intent = inHoldShape
     order.say = "holding"
-  order.onBall = sim.onBallFor(index, 20_000_000'i32)
+  order.onBall = sim.onBallFor(index, params.shootRange,
+    params.pressureRadius)
   result.cog = order
+
+proc zonalDirective*(sim: SimServer, seat: int, turn: int): Directive =
+  ## `zonal` at the tuned point.
+  sim.zonalDirectiveWith(seat, turn, ZonalTuned)
 
 proc gegenpressDirective*(sim: SimServer, seat: int, turn: int): Directive =
   ## Chase everything, everywhere. Loses to `zonal` over four minutes, which is
@@ -113,7 +143,7 @@ proc gegenpressDirective*(sim: SimServer, seat: int, turn: int): Directive =
   else:
     order.intent = inPress
     order.say = "hunt it"
-  order.onBall = sim.onBallFor(index, 26_000_000'i32)
+  order.onBall = sim.onBallFor(index, 26_000_000'i32, 2_500_000'i32)
   result.cog = order
 
 proc baselineDirective*(

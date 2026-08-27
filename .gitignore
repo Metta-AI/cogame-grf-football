@@ -1,6 +1,7 @@
 bin/
 dist/
 nimcache/
+tools/tune_baselines
 nim.cfg
 replay-viewer/dist/
 tests/fixtures/*.replay

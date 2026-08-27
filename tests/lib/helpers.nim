@@ -68,10 +68,15 @@ proc runScriptedMatch*(
   config: GameConfig,
   red = "zonal",
   blue = "zonal",
-  collectActions = false
+  collectActions = false,
+  zonalParams = ZonalTuned
 ): ScriptedMatch =
   ## A whole episode driven by the scripted baselines through the REAL control
   ## layer — the same path the server takes, minus the sockets.
+  ##
+  ## `zonalParams` is the grid harness's seam (tools/tune_baselines.nim): it
+  ## defaults to the tuned point the game itself runs, so every test that does
+  ## not name it measures the shipped baseline.
   var sim = seatedSim(config)
   var directives: array[SeatCount, Directive]
   for seat in 0 ..< SeatCount:
@@ -90,7 +95,10 @@ proc runScriptedMatch*(
         let turn = elapsed div sim.turnTicks()
         for seat in 0 ..< SeatCount:
           let name = if teamOfSeat(seat) == Red: red else: blue
-          directives[seat] = sim.baselineDirective(seat, name, turn)
+          directives[seat] =
+            if baselineOfName(name) == blZonal:
+              sim.zonalDirectiveWith(seat, turn, zonalParams)
+            else: sim.baselineDirective(seat, name, turn)
           sim.activeDirective[seat] = directives[seat]
           sim.hasDirective[seat] = true
     let actions = sim.compileActions(sim.activeDirective)

@@ -27,6 +27,7 @@ Read `docs/RULES.md` before changing anything under `src/grf_football/`.
 | the wire, in prose | `docs/PROTOCOL.md` |
 | how to write a prompt | `docs/COACHING.md` |
 | the design note this repo was built from | `docs/plans/` |
+| the scripted baseline's tuning sweep | `tools/tune_baselines.nim` → `docs/tuning/` |
 | the physics | `src/grf_football/sim.nim` |
 | the unseated shirts | `src/grf_football/builtin_ai.nim` |
 | order → action bytes | `src/grf_football/control.nim` |
