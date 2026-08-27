@@ -13,7 +13,10 @@
 # not "upload-coworld prunes the image" -- no prune/rmi exists anywhere in the
 # CLI; only the ordering is established, so treat it as empirical.) `secret
 # put` MUST come after upload-coworld, because the secret namespace does not
-# exist until the Coworld does.
+# exist until the Coworld does. `Confirm the Coworld is canonical` sits between
+# those two: it re-reads the platform's record because the `Canonical:` line
+# upload-coworld prints is a snapshot taken before the hosted certification that
+# flips the flag has finished.
 #
 # Repo secrets required: SOFTMAX_TOKEN, ANTHROPIC_API_KEY (set by coworld-builder's propagate-secrets.yml).
 #
@@ -343,6 +346,54 @@ jobs:
           print(json.dumps({k: v for k, v in out.items() if k != "output_tail"}, indent=2))
           if rc != 0:
               raise SystemExit(f"upload-coworld exited {rc}")
+          PY
+
+      - name: Confirm the Coworld is canonical
+        # The `Canonical:` line upload-coworld prints is a SNAPSHOT taken the
+        # instant the hosted smoke episodes go terminal, and the platform flips
+        # the flag a little later, when the auto-queued hosted certification
+        # finishes. OBSERVED twice on this repo: runs 33062411212 (0.1.0) and
+        # 33063142595 (0.1.1) both printed `Canonical: no` with `Hosted
+        # certification: certifying`, and `GET /v2/coworlds/<cow_id>` reported
+        # `canonical: true, state: certified` minutes later. A version bump does
+        # not fix that, so re-read the platform's own record here (bounded) and
+        # let that decide `canonical`.
+        run: |
+          set -euo pipefail
+          echo "Confirm the Coworld is canonical" > "$RR/current_step"
+          python3 - "$RR" "$COWORLD_PKG" <<'PY'
+          import json, subprocess, sys, time
+          rr, pkg = sys.argv[1], sys.argv[2]
+          upload = json.load(open(f"{rr}/upload.json"))
+          cow_id = upload.get("cow_id")
+          if not cow_id:
+              raise SystemExit("upload.json has no cow_id; cannot confirm canonical")
+          # Only ever upgrades "no" -> "yes" on the platform's own record; a
+          # Coworld that never becomes canonical still fails `Enforce canonical`
+          # at the end of the job, with the reason in release-result.errors[].
+          deadline = time.monotonic() + 600
+          while True:
+              proc = subprocess.run(
+                  ["uvx", "--from", pkg, "coworld", "status", cow_id, "--json"],
+                  capture_output=True, text=True,
+              )
+              if proc.returncode == 0:
+                  status = json.loads(proc.stdout)
+                  canonical = bool(status["coworld"].get("canonical"))
+                  state = (status.get("certification") or {}).get("state")
+                  print(f"canonical={canonical} hosted certification={state}", flush=True)
+                  if canonical:
+                      upload["canonical"] = "yes"
+                      upload["canonical_source"] = "coworld status (GET /v2/coworlds/<cow_id>)"
+                      upload["hosted_certification"] = state or upload.get("hosted_certification")
+                      json.dump(upload, open(f"{rr}/upload.json", "w"), indent=2)
+                      break
+              else:
+                  print(proc.stderr[-500:], flush=True)
+              if time.monotonic() >= deadline:
+                  print(f"::warning::Coworld {cow_id} was still not canonical after 600 s")
+                  break
+              time.sleep(10)
           PY
 
       - name: Put the Coworld secret
