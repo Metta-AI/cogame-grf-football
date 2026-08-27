@@ -24,7 +24,7 @@ import
   std/[json, os, strutils],
   bitworld/runtime,
   curly,
-  sim
+  sim, directives
 
 const
   AnthropicUrl = "https://api.anthropic.com/v1/messages"
@@ -160,12 +160,23 @@ proc requestFor*(client: LlmClient, system, user: string): LlmRequest =
     result.url = AnthropicUrl
   result.body = $body
 
+proc errorDetail(text: string, maxRunes: int): string =
+  ## Every quoted fragment of an HTTP body or of model text on this module's
+  ## error paths becomes a `GrfFootballError` message, which `decide.nim` writes
+  ## to the replay as `fallback.detail`. So it is truncated on RUNE boundaries,
+  ## never by byte index (AGENTS.md rule 2, docs/RULES.md SS Determinism):
+  ## `body` is whatever the endpoint sent and may be UTF-8, and a byte slice
+  ## through a multi-byte character mangles it. Newlines become spaces first so
+  ## the detail stays one quotable line -- `clipRunes` drops control characters
+  ## outright, which would otherwise run two words together.
+  clipRunes(text.multiReplace(("\r\n", " "), ("\n", " "), ("\r", " ")), maxRunes)
+
 proc completionText*(client: LlmClient, code: int, body: string): string =
   ## Turns one HTTP response into the model's text, or raises with a short,
   ## quotable reason. Auth failures disable the client for the rest of the
   ## episode so no later turn pays another network wait.
   if code == 401 or code == 403:
-    let detail = body[0 .. min(body.high, 400)]
+    let detail = errorDetail(body, 400)
     if "Model access is denied" in body and
         client.tryNextBedrockModel("no model access"):
       raise newException(GrfFootballError, "bedrock model access denied: " & detail)
@@ -173,12 +184,12 @@ proc completionText*(client: LlmClient, code: int, body: string): string =
     raise newException(GrfFootballError,
       "llm auth failed (" & $code & "): " & detail)
   if code == 429:
-    let detail = body[0 .. min(body.high, 300)]
+    let detail = errorDetail(body, 300)
     discard client.tryNextBedrockModel("throttled")
     raise newException(GrfFootballError, "llm throttled (429): " & detail)
   if code < 200 or code >= 300:
     raise newException(GrfFootballError, "llm error " & $code & ": " &
-      body[0 .. min(body.high, 300)])
+      errorDetail(body, 300))
   let payload = parseJson(body)
   if payload{"stop_reason"}.getStr() == "refusal":
     raise newException(GrfFootballError, "llm refusal")
@@ -189,7 +200,7 @@ proc completionText*(client: LlmClient, code: int, body: string): string =
       result.add(contentBlock{"text"}.getStr())
   if payload{"stop_reason"}.getStr() == "max_tokens" and '{' notin result:
     raise newException(GrfFootballError, "reply cut off at max_tokens before " &
-      "any JSON: " & result[0 .. min(result.high, 160)].replace("\n", " "))
+      "any JSON: " & errorDetail(result, 160))
 
 proc extractJsonObject*(text: string): JsonNode =
   ## Pulls the outermost `{...}` object out of a model response, tolerating
@@ -198,9 +209,11 @@ proc extractJsonObject*(text: string): JsonNode =
     start = text.find('{')
     stop = text.rfind('}')
   if start < 0 or stop <= start:
-    var head = text.strip()
-    if head.len > 160:
-      head = head[0 ..< 160] & "..."
+    let head = errorDetail(text, 160)
     raise newException(GrfFootballError,
-      "no JSON object in response: " & head.replace("\n", " "))
+      "no JSON object in response: " & head)
+  # `start`/`stop` are the byte offsets of an ASCII `{` and `}`. In valid UTF-8
+  # an ASCII byte never occurs inside a multi-byte sequence, so this slice is on
+  # rune boundaries by construction — and it goes to the JSON parser, not to the
+  # replay.
   parseJson(text[start .. stop])

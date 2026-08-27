@@ -103,7 +103,67 @@ proc summaryIsStrictUtf8Json() =
   removeFile(path)
   report "replay_summary.py emits strict-UTF-8 JSON with the emoji intact"
 
+proc detailOf(body: string, code: int): string =
+  ## The message `completionText` raises on an error code — the string
+  ## `decide.nim` puts into `fallback.detail` and the replay writer records.
+  let client = newLlmClient(testConfig())
+  try:
+    discard client.completionText(code, body)
+  except GrfFootballError as failure:
+    return failure.msg
+  doAssert false, "completionText must raise on code " & $code
+  ""
+
+proc errorDetailIsRuneSafe() =
+  ## The path llm.nim -> GrfFootballError.msg -> decide's `fallback.detail` ->
+  ## the replay used to slice the HTTP body by BYTE index (400/300/160), which
+  ## docs/RULES.md and AGENTS.md rule 2 forbid on any path to the replay. Every
+  ## input below is chosen so the OLD byte-slice point falls in the middle of a
+  ## 4-byte character; a mid-rune cut re-encodes as U+00F0 ("\xC3\xB0"), so the
+  ## absence of that sequence is the assertion that the truncation is on rune
+  ## boundaries and not merely repaired after the fact.
+  const
+    Trophy = "\xF0\x9F\x8F\x86"    ## U+1F3C6, four bytes
+    Mojibake = "\xC3\xB0"          ## U+00F0, what a cut 0xF0 lead re-encodes to
+  var emoji = "{}"                 ## two ASCII bytes: every later cut is odd
+  for _ in 0 ..< 600:
+    emoji.add(Trophy)
+  for (code, cap) in [(401, 400), (429, 300), (500, 300)]:
+    let detail = detailOf(emoji, code)
+    doAssert isValidUtf8(detail), "the detail for " & $code & " is not UTF-8"
+    doAssert detail.validateUtf8() == -1, "std/unicode agrees, for " & $code
+    doAssert Mojibake notin detail,
+      "the detail for " & $code & " was cut mid-rune"
+    doAssert Trophy in detail, "the detail for " & $code & " kept no text"
+    doAssert detail.runeLen <= cap + 64,
+      "the detail for " & $code & " is " & $detail.runeLen & " runes"
+    let recorded = clipRunes(detail, MaxDetailRunes)
+    doAssert isValidUtf8(recorded) and recorded.runeLen <= MaxDetailRunes
+    doAssert Mojibake notin recorded
+
+  # The no-JSON path: prose with no `{`, over the 160-byte head cut.
+  var prose = "!"
+  for _ in 0 ..< 100:
+    prose.add(Trophy)
+  var noJson = ""
+  try:
+    discard extractJsonObject(prose)
+  except GrfFootballError as failure:
+    noJson = failure.msg
+  doAssert noJson.len > 0, "extractJsonObject must raise on prose"
+  doAssert isValidUtf8(noJson) and Mojibake notin noJson,
+    "the no-JSON head was cut mid-rune"
+
+  # And an input that is ALREADY byte-truncated — the reviewer's open question:
+  # a lead byte whose continuation bytes are missing must not raise a Defect in
+  # either build, and must not reach the replay as invalid UTF-8.
+  let truncated = detailOf("{}" & repeat("a", 396) & Trophy[0 ..< 2], 429)
+  doAssert isValidUtf8(truncated), "a byte-truncated body produced bad UTF-8"
+  doAssert isValidUtf8(clipRunes(truncated, MaxDetailRunes))
+  report "every captured error detail is truncated on rune boundaries"
+
 when isMainModule:
   echo "test_replay_utf8"
   summaryIsStrictUtf8Json()
+  errorDetailIsRuneSafe()
   echo "test_replay_utf8 ok"
