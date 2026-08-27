@@ -1,7 +1,7 @@
 ## The decision loop: ONE parallel batch of eight per turn, one bounded retry,
 ## the scripted fallback, the budget guard, and the per-turn wall clock.
 
-import std/[json, monotimes, os, strutils, times]
+import std/[json, monotimes, os, times]
 import lib/helpers
 import grf_football/server
 

@@ -3,7 +3,7 @@
 ## declared, the docs are inlined as TEXT, and the results schema's keys equal
 ## `playerResultsJson()`'s keys exactly.
 
-import std/[json, os, sequtils, sets, strutils]
+import std/[json, os, sequtils, sets]
 import lib/helpers
 
 const ManifestPath = "coworld_manifest_template.json"

@@ -2,7 +2,7 @@
 ## is keyed red/blue, the beats carry only kinds with CSS, and a frame reached
 ## by a SEEK hydrates the scorebug and the end-card with no events at all.
 
-import std/[json, strutils]
+import std/json
 import lib/helpers
 
 const BeatKindsWithCss = ["gamestart", "goal", "shot", "save", "foul",
@@ -39,6 +39,10 @@ proc beatsCarryOnlyKindsWithCss() =
   let config = testConfig(maxTicks = 1440)
   var sim = seatedSim(config)
   var tracker = initBroadcastTracker()
+  # Snapshot while the sim is still in the LOBBY: the phase flips to Playing
+  # inside the first step, and a tracker whose first snapshot is already
+  # Playing can never observe the opening whistle.
+  tracker.resync(sim)
   var directives: array[SeatCount, Directive]
   for seat in 0 ..< SeatCount:
     directives[seat] = emptyDirective(seat)

@@ -6,10 +6,10 @@
 
 import std/[os, random, strutils]
 import grf_football/[baselines, broadcast, builtin_ai, control, decide,
-  directives, events, llm, replays, roster, sim]
+  directives, events, llm, replay_runtime, replays, roster, sim]
 
 export sim, control, builtin_ai, baselines, directives, decide, roster,
-  broadcast, events, llm, replays
+  broadcast, events, llm, replays, replay_runtime
 
 proc testConfig*(seed = 679961, maxTicks = DefaultMaxTicks): GameConfig =
   result = defaultGameConfig()

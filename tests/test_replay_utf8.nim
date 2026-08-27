@@ -8,7 +8,10 @@ import lib/helpers
 
 proc emojiNote(): string =
   var note = ""
-  for _ in 0 ..< (MaxNoteRunes - 1):
+  # The emoji must land ON the boundary rune the clip KEEPS: clipRunes takes
+  # runes 0 .. maxRunes-2 and appends an ellipsis, so rune index maxRunes-2 is
+  # the last one to survive.
+  for _ in 0 ..< (MaxNoteRunes - 2):
     note.add("z")
   note.add("\xF0\x9F\x8F\x86")     ## U+1F3C6 TROPHY, four bytes
   note.add(" and a tail that must be cut")
@@ -91,6 +94,9 @@ proc summaryIsStrictUtf8Json() =
   for d in node{"directives"}:
     if "\xF0\x9F\x8F\x86" in d{"note"}.getStr:
       sawEmoji = true
+    for say in d{"says"}:
+      if "\xF0\x9F\x8F\x86" in say.getStr:
+        sawEmoji = true
     doAssert isValidUtf8(d{"note"}.getStr)
     doAssert d{"note"}.getStr.runeLen <= MaxNoteRunes
   doAssert sawEmoji, "the seeded 4-byte emoji did not survive to the replay"

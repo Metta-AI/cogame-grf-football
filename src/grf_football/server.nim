@@ -34,7 +34,7 @@ import
   bitworld/runtime,
   bitworld/spriteprotocol,
   mummy,
-  sim, roster, control, directives, baselines, llm, decide,
+  sim, roster, control, directives, llm, decide,
   global, broadcast, replays, replay_runtime, events, wire_constants
 
 when defined(posix):

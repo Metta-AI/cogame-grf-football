@@ -6,7 +6,7 @@
 ## hashed modules; `SinQ12` matches `math.sin` entry for entry; `isqrt` matches
 ## an exhaustive small table and perfect squares to 2^40.
 
-import std/[math, os, strutils]
+import std/[math, os]
 import lib/helpers
 
 const HashedModules = [

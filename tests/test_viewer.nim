@@ -55,7 +55,6 @@ proc chromeIsTheStarters() =
   doAssert fnv1a(text) == 15163071468075018486'u64,
     "client/chrome_common.js is NOT the starter's byte for byte (fnv1a " &
       $fnv1a(text) & ")"
-  let text = readFile(ChromePath)
   doAssert "window.ChromeCommon" in text
   doAssert "window.CTF_WIRE" in text,
     "the inherited chrome reads window.CTF_WIRE; wire_constants.nim aliases it"

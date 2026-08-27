@@ -6,7 +6,7 @@
 ## runes and `say` <= 48 runes; `pass_to` is always a teammate or null; and no
 ## order names a cog the seat does not command.
 
-import std/random
+import std/[json, random]
 import lib/helpers
 
 proc everyByteIsLegal() =

@@ -78,10 +78,16 @@ const
 
 type
   SpriteDefinition = ref object
+    ## What one viewer has already been sent for a sprite id. It records the
+    ## SHAPE (dimensions + label), never the pixels: a sprite id in this
+    ## renderer is immutable for a given shape, so re-deriving 31 KB of rig
+    ## pixels every tick just to compare them against a copy of themselves was
+    ## the whole cost of a frame. The episode smoke hit its wall-clock stop on
+    ## it; `addSpriteOnce` is now a TEMPLATE so the pixel expression is not
+    ## even evaluated once the shape is known.
     spriteId: int
     width, height: int
     label: string
-    pixels: seq[uint8]
 
   GlobalViewerState* = object
     initialized*: bool
@@ -508,29 +514,47 @@ proc warmBoardRenderCaches*(sim: SimServer) =
 # Emission helpers
 # --------------------------------------------------------------------------
 
-proc addSpriteOnce(
-  packet: var seq[uint8],
-  defs: var seq[SpriteDefinition],
+proc spriteIsCurrent(
+  defs: seq[SpriteDefinition],
   spriteId, width, height: int,
-  pixels: seq[uint8],
   label: string
-) =
-  ## Emits a sprite definition only when this viewer has not already been sent
-  ## an identical one. Sprite definitions are the expensive half of the wire.
+): bool =
+  ## True when this viewer already holds that exact sprite shape.
   for existing in defs:
     if existing.spriteId == spriteId:
-      if existing.width == width and existing.height == height and
-          existing.label == label and existing.pixels == pixels:
-        return
+      return existing.width == width and existing.height == height and
+        existing.label == label
+  false
+
+proc markSprite(
+  defs: var seq[SpriteDefinition],
+  spriteId, width, height: int,
+  label: string
+) =
+  for existing in defs:
+    if existing.spriteId == spriteId:
       existing.width = width
       existing.height = height
       existing.label = label
-      existing.pixels = pixels
-      packet.addSprite(spriteId, width, height, pixels, label)
       return
   defs.add SpriteDefinition(spriteId: spriteId, width: width, height: height,
-    label: label, pixels: pixels)
-  packet.addSprite(spriteId, width, height, pixels, label)
+    label: label)
+
+template addSpriteOnce(
+  packet: var seq[uint8],
+  defs: var seq[SpriteDefinition],
+  spriteId, width, height: int,
+  pixels: untyped,
+  label: string
+) =
+  ## Emits a sprite definition only when this viewer has not already been sent
+  ## that shape. A TEMPLATE, not a proc, so `pixels` — which for a cog rig is a
+  ## 31 KB bake — is never even evaluated on a frame that does not need it.
+  ## Sprite definitions are the expensive half of the wire and, before this,
+  ## were the expensive half of the FRAME too.
+  if not spriteIsCurrent(defs, spriteId, width, height, label):
+    packet.addSprite(spriteId, width, height, pixels, label)
+    markSprite(defs, spriteId, width, height, label)
 
 proc rigSpriteId(team: Team, step: int): int {.inline.} =
   RigSpriteBase + ord(team) * RigSteps + step
@@ -559,9 +583,9 @@ proc addBoardChrome(
   packet.addViewport(MapLayerId, BoardW, BoardH)
   packet.addLayer(MapLayerId, 0, SpriteLayerZoomableFlag)
   var y = 0
-  for i, band in pitchBands:
+  for i in 0 ..< pitchBands.len:
     packet.addSpriteOnce(defs, MapBandSpriteBase + i, BoardW, pitchBandRows[i],
-      band, LabelPitch)
+      pitchBands[i], LabelPitch)
     packet.addObject(MapBandObjectBase + i, 0, y, -1000, MapLayerId,
       MapBandSpriteBase + i)
     y += pitchBandRows[i]
