@@ -51,13 +51,13 @@ proc recordEpisode(config: GameConfig, path: string):
   writer.closeReplayWriter()
 
 proc episodeRoundTrips() =
-  let config = testConfig(maxTicks = 720)
+  let config = testConfig(maxTicks = 1440)
   let path = tempPath("episode.replay")
   removeFile(path)
   let recorded = recordEpisode(config, path)
   doAssert fileExists(path), "the episode wrote a replay"
   doAssert getFileSize(path) > 5000, "the replay is not a stub"
-  doAssert recorded.hashes.len > 700, "the episode played out"
+  doAssert recorded.hashes.len > 1400, "the episode played out"
 
   # Re-simulate from the bytes and compare every tick.
   let data = loadReplay(path)
@@ -78,12 +78,12 @@ proc episodeRoundTrips() =
     inc ticks
   doAssert not player.hashValidationFailed,
     "the hash chain diverged at tick " & $player.hashMismatchTick
-  doAssert ticks > 700, "the re-simulation walked the whole match"
+  doAssert ticks > 1400, "the re-simulation walked the whole match"
   removeFile(path)
   report "an episode round-trips through the replay with an identical chain"
 
 proc recordsStayUnderTheCap() =
-  let config = testConfig(maxTicks = 720)
+  let config = testConfig(maxTicks = 1440)
   let path = tempPath("episode-caps.replay")
   removeFile(path)
   let recorded = recordEpisode(config, path)
@@ -114,9 +114,81 @@ proc resultRecordEqualsTheResults() =
   removeFile(path)
   report "the result record equals playerResultsJson()"
 
+proc theRenderPathDoesNotPerturbTheSim() =
+  ## The server does three things to the sim each tick that no test harness
+  ## did: it derives broadcast events, it builds a sprite packet per seat, and
+  ## it builds the chrome frame — and two of those take `var SimServer`. A
+  ## hosted recording diverged from its own re-simulation at a throw-in, so
+  ## this plays an episode through ALL of it and then re-simulates the bytes.
+  let config = testConfig(maxTicks = 1440)
+  let path = tempPath("episode-render.replay")
+  removeFile(path)
+  var sim = seatedSim(config)
+  sim.warmBoardRenderCaches()
+  var writer = openReplayWriter(path, config.configJson())
+  writer.lastMasks = newSeq[uint8](CogCount)
+  for seat in 0 ..< SeatCount:
+    writer.writeJoin(tickTime(sim.tickCount), seat, "policy-" & $seat, seat,
+      "t" & $seat)
+  var
+    tracker = initBroadcastTracker()
+    viewers: array[SeatCount, PlayerViewerState]
+    prev = newSeq[uint8](CogCount)
+    guard = 0
+  for seat in 0 ..< SeatCount:
+    viewers[seat] = initPlayerViewerState()
+  while sim.phase != GameOver and guard < config.maxTicks * 3 + 5000:
+    inc guard
+    if sim.phase == Playing:
+      let elapsed = sim.tickCount - sim.gameStartTick
+      if elapsed mod sim.turnTicks() == 0 or not sim.hasDirective[0]:
+        let turn = elapsed div sim.turnTicks()
+        for seat in 0 ..< SeatCount:
+          let d = sim.zonalDirective(seat, turn)
+          sim.activeDirective[seat] = d
+          sim.hasDirective[seat] = true
+          let record = capRecord($directiveJson(seat, d))
+          writer.writeChat(tickTime(sim.tickCount), 0, record)
+          sim.applyRecord(record)
+    let actions = sim.compileActions(sim.activeDirective)
+    writer.writeInputFrameMasks(tickTime(sim.tickCount), actions)
+    var buffer = newSeq[uint8](CogCount)
+    for i in 0 ..< CogCount:
+      buffer[i] = actions[i]
+    sim.step(buffer, prev)
+    prev = buffer
+    writer.writeHash(uint32(sim.tickCount), sim.gameHash())
+    let events = newJArray()
+    sim.stepEvents(tracker, events)
+    for seat in 0 ..< SeatCount:
+      var next: PlayerViewerState
+      discard sim.buildSpriteProtocolPlayerUpdates(seat, viewers[seat], next)
+      viewers[seat] = next
+    discard sim.buildStateJson(events, true, 1, config.maxTicks, false, false,
+      -1, -1)
+  writer.writeChat(tickTime(sim.tickCount), 0, capRecord(sim.resultRecordJson()))
+  writer.closeReplayWriter()
+
+  let data = loadReplay(path)
+  var replayConfig = defaultGameConfig()
+  replayConfig.update(data.configJson)
+  var replaySim = initSimServer(replayConfig)
+  replaySim.gameEventLoggingEnabled = false
+  var player = initReplayPlayer(data)
+  player.mismatchQuit = false
+  while player.hashIndex < data.hashes.len and
+      replaySim.tickCount < player.replayMaxTick():
+    player.stepReplay(replaySim)
+    doAssert not player.hashValidationFailed,
+      "the recording diverged from its own re-simulation at tick " &
+        $player.hashMismatchTick & " — the render path perturbed the sim"
+  removeFile(path)
+  report "the broadcast and render path does not perturb the sim"
+
 when isMainModule:
   echo "test_replay"
   episodeRoundTrips()
+  theRenderPathDoesNotPerturbTheSim()
   recordsStayUnderTheCap()
   resultRecordEqualsTheResults()
   echo "test_replay ok"
