@@ -117,6 +117,45 @@ proc zonalBeatsGegenpress() =
       " — the fillers must give the ladder a spread"
   report "zonal is not beaten by gegenpress over the head-to-head fixture"
 
+proc chasingKeepsItsDirectionBits() =
+  ## The control layer's rule 2 (design.md:537-538): the direction nibble is 0
+  ## when the cog has arrived AND IS NOT CHASING THE BALL. A cog that is the
+  ## closest of its team to a loose ball is chasing, and its steering point is
+  ## the interception point — which sits nearly on top of a slow ball — so
+  ## dropping the nibble there parks the cog beside the ball it was sent to win.
+  var sim = playing(testConfig())
+  let
+    seat = 0
+    index = cogOfSeat(seat)
+  # Every other cog is parked in the far corner, so `index` is unambiguously
+  # its team's nearest to the ball.
+  for i in 0 ..< CogCount:
+    sim.cogs[i].x = PitchXMax - 1_000_000'i32
+    sim.cogs[i].y = PitchYMax - 1_000_000'i32
+    sim.cogs[i].vx = 0
+    sim.cogs[i].vy = 0
+    sim.cogs[i].dir = 0
+  sim.ball.controller = -1
+  sim.ball.dead = false
+  sim.ball.x = CentreX
+  sim.ball.y = CentreY
+  sim.ball.vx = 60_000'i32          ## crawling east, so the intercept point is
+  sim.ball.vy = 0                   ## within ArriveUm of the cog
+  sim.cogs[index].x = CentreX - 200_000'i32
+  sim.cogs[index].y = CentreY
+  doAssert sim.ballIsLoose()
+  doAssert sim.nearestOfTeamToBall(teamOfSeat(seat)) == index
+  let p = sim.interceptPoint(index)
+  doAssert distI(p.x - sim.cogs[index].x, p.y - sim.cogs[index].y) < ArriveUm,
+    "the fixture must put the intercept point inside the arrival radius"
+  for seatIndex in 0 ..< SeatCount:
+    sim.activeDirective[seatIndex] = sim.zonalDirective(seatIndex, 0)
+    sim.hasDirective[seatIndex] = true
+  let actions = sim.compileActions(sim.activeDirective)
+  doAssert actionDir(actions[index]) != 0,
+    "a chasing cog keeps its direction bits, got dir 0"
+  report "an arrived cog that is still chasing keeps its direction bits"
+
 when isMainModule:
   echo "test_control"
   everyByteIsLegal()
@@ -124,5 +163,6 @@ when isMainModule:
   oneOrderPerSeatForItsOwnShirt()
   controlAlwaysActuates()
   restartForcesTheTakerIdle()
+  chasingKeepsItsDirectionBits()
   zonalBeatsGegenpress()
   echo "test_control ok"

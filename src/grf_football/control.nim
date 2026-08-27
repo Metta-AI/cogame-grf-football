@@ -181,7 +181,7 @@ proc compileAction*(
     elif sim.cogs[index].dribbling:
       code = 7
 
-  sim.steerAction(index, px, py, sprint, code, codeDir)
+  sim.steerAction(index, px, py, sprint, code, codeDir, chasing)
 
 proc compileActions*(
   sim: SimServer,

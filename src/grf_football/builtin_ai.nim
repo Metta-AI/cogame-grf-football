@@ -333,15 +333,18 @@ proc steerAction*(
   px, py: int32,
   sprint: bool,
   code: int32,
-  codeDir: int32
+  codeDir: int32,
+  chasing = false
 ): uint8 =
   ## Turns a steering point into one action byte. The direction nibble is 0
   ## when the cog has arrived and is not chasing the ball, so an arrived cog
-  ## stands still instead of jittering across its target.
+  ## stands still instead of jittering across its target. A CHASING cog keeps
+  ## its bits: its steering point is the interception point, which the ball is
+  ## leaving, so dropping the nibble there parks the cog next to a loose ball.
   var dir =
     if code >= 1 and code <= 4: codeDir
     else: dirOfVector(px - sim.cogs[index].x, py - sim.cogs[index].y)
-  if code < 1 or code > 4:
+  if (code < 1 or code > 4) and not chasing:
     let d = distI(px - sim.cogs[index].x, py - sim.cogs[index].y)
     if d < ArriveUm:
       dir = 0
