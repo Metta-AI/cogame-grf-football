@@ -1210,11 +1210,12 @@ proc stepPlaying(sim: var SimServer, actions: openArray[uint8]) =
     # 7. Four substeps (goal / out-of-play tests inside).
     discard sim.runSubsteps(actions)
 
-  # 9. Possession bookkeeping.
+  # 9. Possession bookkeeping. The team of the CURRENT CONTROLLER only, and so
+  # nothing at all before the first touch or while the ball is loose: a loose
+  # ball belongs to nobody, and crediting the last toucher for it made the
+  # broadcast's possession bar read 100 % for a team that had lost the ball.
   if sim.ball.controller >= 0:
     inc sim.teamStats[teamOfCog(int(sim.ball.controller))].possessionTicks
-  elif sim.lastTouch.team >= 0:
-    inc sim.teamStats[Team(sim.lastTouch.team and 1)].possessionTicks
 
   # 10. Stalemate counter and, at the threshold, the neutral drop.
   if sim.restartTicks <= 0:

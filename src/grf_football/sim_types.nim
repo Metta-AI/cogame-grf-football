@@ -21,7 +21,14 @@ import
 
 const
   GameName* = "grf-football"
-  GameVersion* = "4"  ## GV4 (a pass can be received): ControlSpeed was 12 m/s,
+  GameVersion* = "5"  ## GV5 (possession is the controller's): `possessionTicks`
+    ## is credited to the team of the CURRENT CONTROLLER only, per the design
+    ## note's resolution step 9. GV4 and earlier also credited the last toucher
+    ## while the ball was loose, so the broadcast possession bar read 100 % for
+    ## a team that had lost the ball. `possessionTicks` is hashed, so this
+    ## obsoletes GV4's chain.
+    ##
+    ## GV4 (a pass can be received): ControlSpeed was 12 m/s,
     ## below the 14 m/s short pass, so a pass ricocheted off its receiver every
     ## time and a whole certification episode finished 0-0 with a single shot.
     ## It is now 18 m/s: a pass can be taken on arrival, a shot cannot.

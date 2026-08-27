@@ -180,7 +180,10 @@ Every tick `t`, in this exact order, no exceptions:
 7. **Four substeps**, each: cog integration → ball integration → cog–cog →
    cog boundary clamp → slide volumes → ball vs cogs → carry → ball vs posts →
    netting → goal test → out-of-play test.
-8. **Possession bookkeeping**, touches, passes, interceptions, shots, tackles.
+8. **Possession bookkeeping**, touches, passes, interceptions, shots,
+   tackles. `possessionTicks` is credited to the team of the **current
+   controller** only — nothing before the first touch, and nothing while the
+   ball is loose.
 9. **Stalemate counter** and, at 480, the neutral drop.
 10. **Hash.** One `gameHash` per tick.
 11. **Boundaries.** Half-time at 2880; `turn_end` and mercy at a goal
