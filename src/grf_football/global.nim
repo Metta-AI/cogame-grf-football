@@ -18,9 +18,14 @@ import
   sim, labels, rig_art
 
 const
-  BoardScale* = 2
+  BoardScale* = 1
     ## Board pixels per LOGICAL map pixel. The chrome reports this as `bs` and
     ## converts board <-> world with it.
+    ##
+    ## ONE, not two. Supersampling does not change how big anything LOOKS — the
+    ## whole board is letterboxed into the frame either way — it only multiplies
+    ## every pixel the renderer bakes, compresses and ships, by four. Apparent
+    ## size is set by `CogBodyPx`, in MAP pixels, which is where it belongs.
   BoardW* = MapWidth * BoardScale
   BoardH* = MapHeight * BoardScale
   MapLayerId* = 0
@@ -627,13 +632,21 @@ proc addCogsAndBall(
         byp - ringPx div 2, 90 + i, MapLayerId, RingSpriteBase + ord(team))
     else:
       packet.addDeleteObject(RingObjectBase + i)
+    # The rig sprite's label is GENERIC. It is shared by every cog of one team
+    # facing one of the sixteen baked headings, so putting the shirt id in it
+    # made two same-team cogs on the same heading fight over the sprite and
+    # redefine it — 31 KB of bake plus compression — twice a frame, for every
+    # seat stream, forever. That was 112 ms a tick of pure churn and it ended
+    # the certification episode on the wall clock. The per-cog IDENTITY lives
+    # on the shirt-number chip below, whose sprite is per (team, shirt) and
+    # therefore stable for the whole match.
     packet.addSpriteOnce(defs, spriteId, rigPx, rigPx,
-      rigPixels(team, step, BoardScale), LabelCog & " " & cogId(i))
+      rigPixels(team, step, BoardScale), LabelCog)
     packet.addObject(CogObjectBase + i, bxp - half, byp - half,
       100 + i, MapLayerId, spriteId)
     packet.addSpriteOnce(defs, chipSpriteId(team, int(cog.shirt)),
       chipW, chipH, shirtChipPixels(team, int(cog.shirt), BoardScale),
-      LabelShirtChip)
+      LabelShirtChip & " " & cogId(i))
     packet.addObject(ChipObjectBase + i, bxp - chipW div 2,
       byp - half - chipH, 140 + i, MapLayerId,
       chipSpriteId(team, int(cog.shirt)))

@@ -20,10 +20,15 @@ const
     ## The drop shadow under an airborne ball; a high pass visibly leaves the
     ## ground because the shadow stays on the turf while the ball rises.
   LabelCog* = "cog"
-    ## A footballer of either side. The full label is `cog <id>`, e.g.
-    ## `cog RED-9` — the anonymous in-game identity, never a policy name.
+    ## A footballer of either side. The rig sprite's label is exactly this, with
+    ## NO id: one bake is shared by every cog of a team facing one of the
+    ## sixteen baked headings, and a per-cog label made two same-team cogs on
+    ## one heading redefine the sprite twice a frame.
   LabelShirtChip* = "shirt number"
-    ## The baked shirt-number chip over a cog.
+    ## The baked shirt-number chip over a cog, and the object that carries the
+    ## cog's IDENTITY: the full label is `shirt number <id>`, e.g.
+    ## `shirt number RED-9` — the anonymous in-game identity, never a policy
+    ## name. Its sprite is per (team, shirt), so it is defined once a match.
   LabelSeatRing* = "seat ring"
     ## The bright ring marking one of the eight POLICY-DRIVEN shirts, so a
     ## spectator can see at a glance which four cogs a side are being played.

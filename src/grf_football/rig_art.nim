@@ -21,16 +21,18 @@ type
 
 const
   RigSteps* = 16              ## baked heading steps (16 brads apart).
-  RigCanvas* = 44             ## px square cog sprite canvas at 1x.
-  CogBodyPx* = 11             ## the drawn body diameter in MAP pixels.
-                              ## The collision circle is 1.0 m = 13.3 map px;
-                              ## the cog is drawn LARGER THAN LIFE relative to
-                              ## its 6.7 map-px radius so that at 360 px of
-                              ## board (0.30 screen px per map px) it is still
-                              ## a ~6.6 px disc in its team colour.
-  BallSpritePx* = 8           ## 0.44 m ball + rim, in map pixels.
-  ShirtChipPx* = 12           ## the shirt-number chip, in map pixels.
-  SeatRingPx* = 18            ## the bright ring on a policy-driven shirt.
+  RigCanvas* = 52             ## px square cog sprite canvas at 1x.
+  CogBodyPx* = 20             ## the drawn body diameter in MAP pixels.
+                              ## The collision circle is 1.0 m across = 13.3
+                              ## map px; the cog is drawn LARGER THAN LIFE at
+                              ## 20 map px (1.5 m) so that in the embedded
+                              ## featured-match iframe — 360 screen px for a
+                              ## 1200 map-px board, 0.30 screen px per map px —
+                              ## it is still a ~6 px disc in its team colour.
+  BallSpritePx* = 12          ## 0.44 m ball + rim, drawn large enough that the
+                              ## ball never renders below 5 px across at 360 px.
+  ShirtChipPx* = 14           ## the shirt-number chip, in map pixels.
+  SeatRingPx* = 26            ## the bright ring on a policy-driven shirt.
 
   # Anchors in 192 px master-frame space (coworld-ctf's rig anchors.json).
   RigHub: tuple[x, y: float] = (96.0, 88.0)
