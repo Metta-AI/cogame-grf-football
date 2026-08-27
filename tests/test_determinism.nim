@@ -107,6 +107,26 @@ proc bradsAreAntisymmetric() =
         "atan2 is not antisymmetric at " & $dx & "," & $dy
   report "bradsOfVectorI is exactly antisymmetric under negation"
 
+proc cosmeticPoolsAreOutsideTheHash() =
+  ## Resolution step 11: `gameHash` never mixes directives, notes, FX or trails.
+  ## The three cosmetic pools and the broadcast feed are appended to inside the
+  ## step, so the only way to state the contract is to append to them by hand
+  ## and require the hash not to move.
+  var sim = playing(testConfig())
+  sim.stepIdle(12)
+  let before = sim.gameHash()
+  sim.trail.add TrailPoint(x: sim.ball.x, y: sim.ball.y,
+    tick: int32(sim.tickCount))
+  sim.arcs.add ArcFx(x0: 0, y0: 0, x1: 1, y1: 1, tick: int32(sim.tickCount),
+    team: 0, kind: 0)
+  sim.goalFx.add GoalFx(tick: int32(sim.tickCount), team: 0)
+  sim.feed.add FeedLine(tick: int32(sim.tickCount), kind: "goal", team: 0,
+    text: "a line the hash must not see")
+  sim.activeDirective[0].note = "a note the hash must not see"
+  doAssert sim.gameHash() == before,
+    "gameHash moved when only FX, the trail, the feed or a directive changed"
+  report "FX, trails, the feed and directives are outside gameHash"
+
 when isMainModule:
   echo "test_determinism"
   sameSeedSameChain()
@@ -115,4 +135,5 @@ when isMainModule:
   sinTableMatchesLibm()
   isqrtIsExact()
   bradsAreAntisymmetric()
+  cosmeticPoolsAreOutsideTheHash()
   echo "test_determinism ok"

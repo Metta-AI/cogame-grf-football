@@ -21,7 +21,13 @@ import
 
 const
   GameName* = "grf-football"
-  GameVersion* = "5"  ## GV5 (possession is the controller's): `possessionTicks`
+  GameVersion* = "6"  ## GV6 (FX never enter the chain): `gameHash` no longer
+    ## mixes `trail.len`, `arcs.len` or `goalFx.len`. Resolution step 11, this
+    ## module's field comments and sim_state.nim's docstring all say FX and
+    ## trails never enter the hash; GV2 put their lengths in anyway. Obsoletes
+    ## GV5's chain.
+    ##
+    ## GV5 (possession is the controller's): `possessionTicks`
     ## is credited to the team of the CURRENT CONTROLLER only, per the design
     ## note's resolution step 9. GV4 and earlier also credited the last toucher
     ## while the ball was loose, so the broadcast possession bar read 100 % for

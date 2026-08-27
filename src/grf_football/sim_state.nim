@@ -114,9 +114,13 @@ proc gameHash*(sim: SimServer): uint64 =
   result.mixHashI32(sim.lastDropTick)
   result.mixHashI32(sim.lastRestartTick)
   result.mixHashI32(sim.lastHalfTimeTick)
-  result.mixHashInt(sim.trail.len)
-  result.mixHashInt(sim.arcs.len)
-  result.mixHashInt(sim.goalFx.len)
+  # `trail`, `arcs` and `goalFx` are NOT mixed, not even by length. They are the
+  # cosmetic pools, and the contract in this module's docstring, in the design
+  # note's resolution step 11 and on the fields themselves (sim_types.nim:537-539
+  # "never hashed") is that FX and trails never enter the chain. Their lengths
+  # are deterministic, so hashing them was harmless and still wrong: it made the
+  # chain say a divergence had happened in the hashed state when what had
+  # actually changed was a celebration.
   result.mixHashI32(sim.ball.x)
   result.mixHashI32(sim.ball.y)
   result.mixHashI32(sim.ball.vx)
