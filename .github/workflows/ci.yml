@@ -447,6 +447,27 @@ jobs:
           # coworld whose whole board fits the frame. DROP THIS FLAG ONLY if
           # the board is pannable, where drawing off-frame is normal -- the
           # count is still reported on stdout and in viewer-smoke.json.
+          #
+          # EXPECT `canvas text: 0 drawn` HERE, and read it as "this check
+          # covered nothing", not as "nothing overflowed". Two reasons, both
+          # deliberate:
+          #   1. the board is drawn into an OffscreenCanvas inside
+          #      replay-viewer/static_replay_worker.js, and the harness can only
+          #      instrument main-thread 2D contexts (it says so at
+          #      tools/ci/viewer_smoke.mjs:140-142);
+          #   2. this game draws NO strings on the canvas at all. The complete
+          #      sprite vocabulary is src/grf_football/labels.nim:13-56 (pitch,
+          #      ball, cog, shirt number, seat ring, trail, arc, goal flash) and
+          #      every one of them is a sprite, not a fillText.
+          # Model-authored text -- a directive `note`, a cog's `say` -- is DOM,
+          # not canvas: client/replay_broadcast.html's fbDirectives() writes it
+          # into `.feed-row.fb-model`, whose width band is sized from the
+          # server's own MaxNoteRunes/MaxSayRunes caps and asserted by
+          # tests/test_viewer.nim's modelTextHasAWrappingBand. That is where the
+          # legibility gate for this game's LLM text lives; a canvas-bounds
+          # harness cannot see DOM text and never will.
+          # The flag stays anyway: the day anything IS drawn on the main-thread
+          # canvas, the gate is already armed.
           node tools/ci/viewer_smoke.mjs \
             --bundle dist/static-replay-viewer \
             --replay "${replay}" \

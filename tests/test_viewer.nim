@@ -189,6 +189,48 @@ proc exportRenameIsConsistent() =
     "the shell sets data-replay-error on every failure path"
   report "the ctf_ -> grf_ rename is consistent and the link flags are ctf's"
 
+proc modelTextHasAWrappingBand() =
+  ## Acceptance checklist item 15, second bullet, for a game whose model text is
+  ## DOM rather than canvas: the one string the page does not choose the length
+  ## of gets a band sized from the SERVER'S cap, in the font it is drawn in.
+  ##
+  ## `note` (<= MaxNoteRunes) and `say` (<= MaxSayRunes) are written by an LLM
+  ## and rendered as `.feed-row`s. The inherited row is `white-space: nowrap;
+  ## max-width: none` — right for ctf's three-word kill lines, and off the left
+  ## edge of the stage for a 160-rune sentence, because #killfeed is anchored to
+  ## the right. So both rows carry `fb-model`, which wraps them.
+  let (_, appended) = pageParts()
+  doAssert ".feed-row.fb-model" in appended,
+    "the model-text band is missing from the appended CSS"
+  let at = appended.find(".feed-row.fb-model {")
+  doAssert at >= 0, "the .feed-row.fb-model rule is missing"
+  let rule = appended[at ..< appended.find('}', at)]
+  doAssert "max-width:" in rule,
+    "the model-text band must bound its width, not grow off the stage"
+  doAssert "white-space: normal" in rule,
+    "the model-text band must wrap; the inherited row is nowrap"
+  doAssert "word-break: break-word" in rule or
+    "overflow-wrap: break-word" in rule,
+    "a single unbroken 160-rune token must still wrap"
+  doAssert "text-overflow: ellipsis" notin rule,
+    "a remark is a sentence, not a label: widen the band, never ellipsize it"
+  # Both of the two places model text reaches a row must ask for the band.
+  for marker in ["CTX.esc(d.note) + '</span>', 'fb-model'",
+      "CTX.esc(cogs[j].say) + '</span>', 'fb-model'"]:
+    doAssert marker in appended,
+      "model text reaches a feed row without the fb-model band: " & marker
+  # The band is sized from these two caps. If a cap moves, re-measure the band
+  # rather than discovering the overflow in a replay.
+  doAssert MaxNoteRunes == 160 and MaxSayRunes == 48,
+    "the caps the band was measured against changed: MaxNoteRunes=" &
+      $MaxNoteRunes & " MaxSayRunes=" & $MaxSayRunes
+  # The reserve exists whether or not anyone is speaking, so a remark landing
+  # does not move the scene.
+  let page = readFile(PagePath)
+  doAssert "min-height: calc(4 * 22 * var(--u)); /* fixed 4-row reserve */" in
+    page, "#killfeed must keep the starter's fixed four-row reserve"
+  report "model-authored feed text wraps inside a band sized from its cap"
+
 when isMainModule:
   echo "test_viewer"
   chromeIsTheStarters()
@@ -196,6 +238,7 @@ when isMainModule:
   appendedIdsAreFbPrefixed()
   everyBeatKindHasCss()
   tinyAndPlateNameRules()
+  modelTextHasAWrappingBand()
   transportBandIsUntouched()
   noAliasIsShadowed()
   bundleSourcesDoNotFetchThePodRoute()

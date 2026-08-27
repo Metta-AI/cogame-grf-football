@@ -2844,6 +2844,39 @@ button.beat-marker {
 .feed-row .fb-goal { color: var(--amber); letter-spacing: 0.08em; font-weight: 600; }
 .feed-row .fb-note { color: var(--paper-dim); }
 
+/* --- the band that carries MODEL-AUTHORED text -------------------------- */
+/* This is the only text in this game whose length the page does not choose: a
+   directive's `note` is capped at 160 runes and a cog's `say` at 48
+   (MaxNoteRunes / MaxSayRunes in src/grf_football/sim_types.nim), and both are
+   written by an LLM. The inherited .feed-row is `white-space: nowrap;
+   max-width: none` because ctf's rows are three-word kill lines; a 160-rune
+   note on one unwrappable line is wider than the whole 1200 px board, and
+   #killfeed is anchored `right: 12u`, so the row grows LEFTWARD off the stage
+   and the sentence is simply not there. cogchemists' clipped speech bubbles
+   (2026-08-24) were this bug on a canvas.
+   So the rows that carry model text wrap inside a band sized from the SERVER'S
+   OWN CAP, in the font they are drawn in: 160 runes of the 8u pixel font wrap
+   to at most five lines of the 228u feed width, and #killfeed already reserves
+   four rows of height whether or not anyone is speaking, so the scene does not
+   jump when a remark lands. Nothing is ellipsized: a remark that does not fit
+   gets more lines, never fewer words. */
+.feed-row.fb-model {
+  max-width: calc(228 * var(--u));
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  align-items: flex-start;
+}
+.feed-row.fb-model .badge {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  text-transform: none;      /* a sentence, not a label */
+  letter-spacing: 0.02em;
+  text-align: left;
+}
+#stage.tiny .feed-row.fb-model { max-width: calc(186 * var(--u)); }
+
 /* --- the goal-replay banner --------------------------------------------- */
 #fb-goalreplay {
   position: absolute;
@@ -3005,11 +3038,13 @@ button.beat-marker {
       var key = d.turn + ':' + d.seat;
       if (seenDirective[key]) continue;
       seenDirective[key] = true;
+      // `fb-model` is the wrapping band: every row below carries text the
+      // model wrote, up to the server's 160/48-rune caps.
       if (d.note) {
         feedRow('<span class="who ' + (d.team || '') + '">' +
           CTX.esc(d.id || up(d.team)) + '</span>' +
           '<span class="glyph">:</span><span class="badge fb-note">' +
-          CTX.esc(d.note) + '</span>');
+          CTX.esc(d.note) + '</span>', 'fb-model');
       }
       var cogs = d.cogs || [];
       for (var j = 0; j < cogs.length; j++) {
@@ -3017,7 +3052,7 @@ button.beat-marker {
         feedRow('<span class="who ' + (d.team || '') + '">' +
           CTX.esc(cogs[j].id || '') + '</span>' +
           '<span class="glyph">·</span><span class="badge">' +
-          CTX.esc(cogs[j].say) + '</span>');
+          CTX.esc(cogs[j].say) + '</span>', 'fb-model');
       }
     }
   }
