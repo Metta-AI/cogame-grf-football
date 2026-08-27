@@ -341,3 +341,10 @@ if [ -f "${work_dir}/results.json" ]; then
   cp "${work_dir}/results.json" "$(dirname "${replay_out}")/results.json"
 fi
 echo "replay saved for the viewer smoke: ${replay_out} ($(wc -c < "${replay_out}" | tr -d ' ') bytes)"
+
+# The game container's own log tail, on SUCCESS too. Without it the only way to
+# read the engine's per-episode budget report (or the reason it stopped early)
+# was to make the smoke fail first. This is a repo-local addition to the
+# coworld-builder template.
+echo "---- game container log (tail 40) ----"
+docker logs "${prefix}-game" 2>&1 | tail -40 || true

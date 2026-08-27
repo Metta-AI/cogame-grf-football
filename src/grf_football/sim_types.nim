@@ -21,7 +21,16 @@ import
 
 const
   GameName* = "grf-football"
-  GameVersion* = "2"  ## GV2 (strict chain): the RNG DRAW COUNT and every other
+  GameVersion* = "3"  ## GV3 (the stop is a record): a wall-clock stop and a
+    ## host error are WALL-CLOCK FACTS — nothing in sim state implies them — so
+    ## banking them outside `sim.step` and then recording the tick's hash made
+    ## every `deadline` replay diverge from its own re-simulation at the stop
+    ## tick, which is exactly the failure `playbooks/make-coworld.md` records
+    ## against particle-worlds. The stop now travels as one load-bearing
+    ## `stop` record applied by the SAME `finishGame` on both record and
+    ## playback. Obsoletes GV2's chain.
+    ##
+    ## GV2 (strict chain): the RNG DRAW COUNT and every other
     ## field the step writes are now in `gameHash`. The seeded sim RNG is read
     ## by the step (kickoff jitter, shot aim error) but its state is private to
     ## `std/random`, so it could not be hashed directly and a drifted stream
@@ -694,6 +703,23 @@ proc endRuleText*(rule: EndRule): string {.inline.} =
   of erWallClock: "wall_clock"
   of erSimFault: "sim_fault"
   of erHostError: "host_error"
+
+proc reasonOfText*(text: string): EndReason {.inline.} =
+  ## The inverse of `reasonText`. A wall-clock stop is a WALL-CLOCK FACT: it
+  ## cannot be re-derived from sim state, so it travels as a replay record and
+  ## is re-applied on playback through the same `finishGame` the server called.
+  case text
+  of "deadline": reasonDeadline
+  of "fault": reasonFault
+  else: reasonComplete
+
+proc endRuleOfText*(text: string): EndRule {.inline.} =
+  case text
+  of "mercy": erMercy
+  of "wall_clock": erWallClock
+  of "sim_fault": erSimFault
+  of "host_error": erHostError
+  else: erFullTime
 
 proc policyKindText*(kind: PolicyKind): string {.inline.} =
   case kind

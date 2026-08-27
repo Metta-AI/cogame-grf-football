@@ -522,8 +522,13 @@ proc runServerLoop*(
       else: initBroadcastTracker()
     quitAfterFrame = false
     failureDeclared = false
+    stopRecorded = false
     lastGoalsSeen: array[Team, int32]
     resultRecordWritten = false
+    simMs = 0
+    renderMs = 0
+    limiterMs = 0
+    lastReportTick = 0
 
   proc recordAndWrite(text: string) =
     ## The ONE path a chat record takes: capped, into the replay AND back
@@ -694,10 +699,21 @@ proc runServerLoop*(
           # coarser than the thing it is stopping.
           if sim.phase == Playing:
             let elapsed = int((getMonoTime() - episodeStart).inSeconds)
-            if elapsed >= config.wallClockBudgetSeconds:
+            if elapsed >= config.wallClockBudgetSeconds and not stopRecorded:
+              stopRecorded = true
               echo "grf-football: wall-clock budget reached at ", elapsed,
                 "s; stopping"
-              sim.wallClockStop()
+              # EDIT 4, correctly: the stop is a RECORD, not a bank. A
+              # wall-clock fact cannot be re-derived from sim state, so
+              # mutating the sim here and then writing this tick's hash made
+              # every deadline replay diverge at the stop tick. `recordAndWrite`
+              # writes it to the replay AND applies it through
+              # `broadcast.applyRecord`, which calls the same `finishGame` the
+              # viewer will call when it reads the record back.
+              recordAndWrite($(%*{
+                "k": "stop", "reason": "deadline", "rule": "wall_clock",
+                "tick": sim.tickCount}))
+          let tickStart = getMonoTime()
           # EDIT 2: the turn boundary, immediately before the tick it governs.
           if sim.phase == Playing:
             let elapsedTicks = sim.tickCount - sim.gameStartTick
@@ -723,6 +739,7 @@ proc runServerLoop*(
           sim.step(stepped, prevActions)
           prevActions = stepped
           replayWriter.writeHash(uint32(sim.tickCount), sim.gameHash())
+          simMs += int((getMonoTime() - tickStart).inMilliseconds)
           # A state checkpoint every StateDigestTicks. The hash chain says a
           # replay diverged; this says WHICH FIELD did, so
           # tools/ci/rehash_probe.nim can name it instead of only naming the
@@ -751,6 +768,7 @@ proc runServerLoop*(
             quitAfterFrame = true
             break
 
+      let renderStart = getMonoTime()
       for i in 0 ..< sockets.len:
         var nextState: PlayerViewerState
         let framePacket = sim.buildSpriteProtocolPlayerUpdates(
@@ -816,13 +834,27 @@ proc runServerLoop*(
             withLock appState.lock:
               discard markSocketClosed(globalViewers[i])
 
+      renderMs += int((getMonoTime() - renderStart).inMilliseconds)
+
       if quitAfterFrame:
         writeArtifacts()
         stopServing()
         break
 
+      let limiterStart = getMonoTime()
       discard runFrameLimiter(lastTick, not replayLoaded and config.fastMode,
         sockets, playerIndices, sim.players.len)
+      limiterMs += int((getMonoTime() - limiterStart).inMilliseconds)
+
+      # WHERE THE WALL CLOCK GOES. The episode has a hard budget and an episode
+      # that overruns it is silently discarded, so "it was slow" is not a
+      # diagnosis: this says whether the seconds went into the sim, into
+      # building the seat packets, or into waiting for the seats.
+      if sim.tickCount - lastReportTick >= 240:
+        lastReportTick = sim.tickCount
+        echo "grf-football: tick ", sim.tickCount, " budget: sim ", simMs,
+          " ms, render ", renderMs, " ms, limiter ", limiterMs,
+          " ms, elapsed ", int((getMonoTime() - episodeStart).inSeconds), "s"
   except CatchableError as failure:
     # fault/host_error. An unexpected exception used to unwind straight out of
     # `isMainModule` with a traceback and NO results.json, no replay upload and
@@ -832,7 +864,14 @@ proc runServerLoop*(
     # written best-effort, and the exception is re-raised unchanged so the exit
     # status and the traceback still say what happened.
     echo "grf-football: host error: ", failure.msg
-    sim.hostErrorStop()
+    try:
+      if not stopRecorded:
+        stopRecorded = true
+        recordAndWrite($(%*{
+          "k": "stop", "reason": "fault", "rule": "host_error",
+          "tick": sim.tickCount}))
+    except CatchableError:
+      sim.hostErrorStop()      ## the replay is already closed; bank it anyway
     try:
       if not resultRecordWritten:
         resultRecordWritten = true

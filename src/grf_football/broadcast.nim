@@ -223,6 +223,21 @@ proc applyRecord*(sim: var SimServer, text: string) =
   of "budget_guard":
     sim.feed.add FeedLine(tick: int32(sim.tickCount), kind: "fallback",
       team: -1, text: "decision budget guard: scripted for the rest")
+  of "stop":
+    # THE ONE RECORD THAT MOVES THE SIM. A wall-clock stop and a host error are
+    # wall-clock facts: no amount of sim state implies them, so the server
+    # cannot bank them itself and expect a re-simulation to agree. It writes
+    # this record instead, and BOTH sides end the match through the same
+    # `finishGame`. `finishGame` is idempotent, so a stop landing on the same
+    # tick as full time cannot overwrite the earlier verdict.
+    let
+      reason = reasonOfText(node{"reason"}.getStr())
+      rule = endRuleOfText(node{"rule"}.getStr())
+    sim.finishGame(reason, rule)
+    sim.feed.add FeedLine(tick: int32(sim.tickCount), kind: "stop",
+      team: -1, text: (
+        if rule == erWallClock: "the engine reached its wall-clock budget"
+        else: "the episode stopped: " & endRuleText(rule)))
   else:
     discard
   while sim.feed.len > 64:

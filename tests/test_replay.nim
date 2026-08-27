@@ -185,9 +185,85 @@ proc theRenderPathDoesNotPerturbTheSim() =
   removeFile(path)
   report "the broadcast and render path does not perturb the sim"
 
+proc everyEndReasonReDerives() =
+  ## THE RECORD -> RE-DERIVE TEST FOR EVERY END REASON, not just `complete`.
+  ## A wall-clock stop and a host error are wall-clock FACTS: nothing in sim
+  ## state implies them, so banking them outside `sim.step` and then writing
+  ## that tick's hash made every `deadline` replay diverge at the stop tick
+  ## (playbooks/make-coworld.md, particle-worlds). They travel as a `stop`
+  ## record and are re-applied through the same `finishGame`.
+  for (reason, rule) in [("deadline", "wall_clock"), ("fault", "host_error"),
+      ("fault", "sim_fault")]:
+    let config = testConfig(maxTicks = 1440)
+    let path = tempPath("episode-" & rule & ".replay")
+    removeFile(path)
+    var sim = seatedSim(config)
+    var writer = openReplayWriter(path, config.configJson())
+    writer.lastMasks = newSeq[uint8](CogCount)
+    for seat in 0 ..< SeatCount:
+      writer.writeJoin(tickTime(sim.tickCount), seat, "policy-" & $seat, seat,
+        "t" & $seat)
+    var prev = newSeq[uint8](CogCount)
+    var guard = 0
+    var stopped = false
+    while sim.phase != GameOver and guard < config.maxTicks * 3 + 5000:
+      inc guard
+      if sim.phase == Playing:
+        let elapsed = sim.tickCount - sim.gameStartTick
+        if elapsed mod sim.turnTicks() == 0 or not sim.hasDirective[0]:
+          for seat in 0 ..< SeatCount:
+            sim.activeDirective[seat] =
+              sim.zonalDirective(seat, elapsed div sim.turnTicks())
+            sim.hasDirective[seat] = true
+        # The stop lands mid-match, exactly as the engine's would.
+        if elapsed >= 600 and not stopped:
+          stopped = true
+          let record = capRecord($(%*{
+            "k": "stop", "reason": reason, "rule": rule,
+            "tick": sim.tickCount}))
+          writer.writeChat(tickTime(sim.tickCount), 0, record)
+          sim.applyRecord(record)
+      let actions = sim.compileActions(sim.activeDirective)
+      writer.writeInputFrameMasks(tickTime(sim.tickCount), actions)
+      var buffer = newSeq[uint8](CogCount)
+      for i in 0 ..< CogCount:
+        buffer[i] = actions[i]
+      sim.step(buffer, prev)
+      prev = buffer
+      writer.writeHash(uint32(sim.tickCount), sim.gameHash())
+    doAssert stopped, "the stop record was never written"
+    doAssert reasonText(sim.endReason) == reason,
+      "the recorded stop must set reason " & reason & ", got " &
+        reasonText(sim.endReason)
+    doAssert endRuleText(sim.endRule) == rule
+    writer.writeChat(tickTime(sim.tickCount), 0,
+      capRecord(sim.resultRecordJson()))
+    writer.closeReplayWriter()
+
+    let data = loadReplay(path)
+    var replayConfig = defaultGameConfig()
+    replayConfig.update(data.configJson)
+    var replaySim = initSimServer(replayConfig)
+    replaySim.gameEventLoggingEnabled = false
+    var player = initReplayPlayer(data)
+    player.mismatchQuit = false
+    while player.hashIndex < data.hashes.len and
+        replaySim.tickCount < player.replayMaxTick():
+      player.stepReplay(replaySim)
+      doAssert not player.hashValidationFailed,
+        "a " & reason & "/" & rule & " episode diverged at tick " &
+          $player.hashMismatchTick & " — the stop is not re-derivable"
+    doAssert reasonText(replaySim.endReason) == reason,
+      "playback must re-derive reason " & reason
+    doAssert endRuleText(replaySim.endRule) == rule,
+      "playback must re-derive endRule " & rule
+    removeFile(path)
+  report "every end reason is recorded as a record and re-derives exactly"
+
 when isMainModule:
   echo "test_replay"
   episodeRoundTrips()
+  everyEndReasonReDerives()
   theRenderPathDoesNotPerturbTheSim()
   recordsStayUnderTheCap()
   resultRecordEqualsTheResults()
