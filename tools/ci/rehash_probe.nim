@@ -21,18 +21,19 @@ when isMainModule:
   let data = loadReplay(paramStr(1))
   var config = defaultGameConfig()
   config.update(data.configJson)
-  var sim = initSimServer(config)
-  sim.gameEventLoggingEnabled = false
+  # `game`, not `sim`: `sim` is the imported MODULE's name here.
+  var game = initSimServer(config)
+  game.gameEventLoggingEnabled = false
   var player = initReplayPlayer(data)
   player.mismatchQuit = false
   let limit =
     if paramCount() >= 2: parseInt(paramStr(2)) else: high(int)
   let maxTick = player.replayMaxTick()
-  while player.hashIndex < data.hashes.len and sim.tickCount < maxTick and
-      sim.tickCount < limit:
-    player.stepReplay(sim)
+  while player.hashIndex < data.hashes.len and game.tickCount < maxTick and
+      game.tickCount < limit:
+    player.stepReplay(game)
     if player.hashValidationFailed:
       quit("NATIVE re-simulation diverged at tick " &
         $player.hashMismatchTick & " of " & $maxTick, 1)
   echo "native re-simulation matched ", player.hashIndex, " of ",
-    data.hashes.len, " recorded ticks (to tick ", sim.tickCount, ")"
+    data.hashes.len, " recorded ticks (to tick ", game.tickCount, ")"
