@@ -723,16 +723,21 @@ proc resolveSlides(sim: var SimServer) =
     if not sim.ball.dead:
       let d = distI(sim.ball.x - sim.cogs[i].x, sim.ball.y - sim.cogs[i].y)
       if d <= SlideRadius + BallRadius and sim.ball.z <= GroundZ:
-        sim.cogs[i].slideTouchedBall = true
-        if sim.ball.controller != int32(i):
-          if sim.ball.controller >= 0:
-            inc sim.cogStats[i].tackles
-            inc sim.teamStats[team].tackles
-            sim.emitEvent(Tackle, source = i,
-              target = int(sim.ball.controller), team = ord(team),
-              x = sim.ball.x, y = sim.ball.y)
-          sim.knockBallLoose(i, sim.cogs[i].slideDirX, sim.cogs[i].slideDirY)
-          sim.recordTouch(i)
+        # ONE tackle per slide. `slideTouchedBall` is both the foul exemption
+        # and the credit gate: a slide spans twelve ticks and forty-eight
+        # substeps, and a volume that stays over the ball would otherwise be
+        # credited a fresh tackle on every one of them.
+        if not sim.cogs[i].slideTouchedBall:
+          sim.cogs[i].slideTouchedBall = true
+          if sim.ball.controller != int32(i):
+            if sim.ball.controller >= 0:
+              inc sim.cogStats[i].tackles
+              inc sim.teamStats[team].tackles
+              sim.emitEvent(Tackle, source = i,
+                target = int(sim.ball.controller), team = ord(team),
+                x = sim.ball.x, y = sim.ball.y)
+            sim.knockBallLoose(i, sim.cogs[i].slideDirX, sim.cogs[i].slideDirY)
+            sim.recordTouch(i)
         continue
     if sim.cogs[i].slideTouchedBall:
       continue
