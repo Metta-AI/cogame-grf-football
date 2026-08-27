@@ -91,9 +91,15 @@ proc appendedIdsAreFbPrefixed() =
   for marker in ["el.id = 'fb-half'", "el.id = 'fb-possbar'",
       "el.id = 'fb-goalreplay'"]:
     doAssert marker in appended, "the game block should create " & marker
-  doAssert "fb-shots-" in appended and "fb-statline-" in appended
+  # The plate CONTENTS are built by the inherited page's own ensureScorebug,
+  # behind FB_MODE, so their ids live above the banner — but they are this
+  # game's nodes, so they carry the prefix too.
+  let page = readFile(PagePath)
+  doAssert "fb-shots-" in page and "fb-statline-" in page,
+    "the football plate contents are missing"
+  doAssert "fb-chip" in page and "fb-sub" in page and "fb-lbl" in page
   discard found
-  report "every id the appended block introduces is fb-prefixed"
+  report "every id this game introduces is fb-prefixed"
 
 proc everyBeatKindHasCss() =
   let (_, appended) = pageParts()

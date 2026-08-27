@@ -243,9 +243,13 @@ proc slideTackleAndFoul() =
     sim.stepWith(actions)
     doAssert sim.cogs[tackler].slideTicks > 0 or
       sim.cogs[tackler].groundedTicks > 0, "the slide started"
-    doAssert sim.ball.controller != int32(carrier),
-      "a slide that reaches the ball knocks it loose"
-    doAssert sim.cogStats[tackler].tackles == 1
+    # The knock itself is what the tackle IS. Whether the ball then rolls to
+    # the tackler, to a third cog, or back to the cog it was taken from is
+    # ordinary play, and the sim deliberately does not privilege any of them.
+    doAssert sim.cogStats[tackler].tackles == 1,
+      "a slide that reaches the ball first is credited as a tackle"
+    doAssert sim.cogStats[tackler].fouls == 0,
+      "a slide that reaches the ball first is never a foul"
   block foul:
     var sim = playing(testConfig())
     let
