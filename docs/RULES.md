@@ -100,8 +100,13 @@ shot code from a cog that does not control the ball is recorded and ignored.
   Aim error in brads is `rng.rand(2·E) − E` with `E = 2 + dist_m/6 + (4 if an
   opponent is within 2 m)`, drawn from the seeded sim RNG.
 - **Control and interception.** After ball motion, the cog nearest the ball
-  within 1.1 m takes possession **iff** the ball's ground speed ≤ 12 m/s and it
-  is not grounded or sliding; ties by ascending cog index. A faster ball
+  within 1.1 m takes possession **iff** the ball's ground speed ≤ **18 m/s** and
+  it is not grounded or sliding; ties by ascending cog index. Eighteen, not the
+  design note's twelve: twelve is below the 14 m/s short pass, so no pass could
+  ever be received on arrival and a whole certification episode finished 0–0
+  with one shot, every pass ricocheting off its receiver. Eighteen draws the
+  line where football draws it — you can control a pass, you cannot control a
+  shot (26 m/s) or a long ball at full pace (22 m/s). A faster ball
   deflects off the cog with restitution 45 %. A cog in possession carries the
   ball 0.9 m ahead of its velocity (0.55 m with dribble mode on).
 - **Slide tackle.** A 12-tick slide at 400 000 µm/tick along the held

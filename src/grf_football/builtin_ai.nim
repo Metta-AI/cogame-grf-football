@@ -142,8 +142,12 @@ proc laneClear*(sim: SimServer, fromIndex, toIndex: int): bool =
     ay = sim.cogs[fromIndex].y
     bx = sim.cogs[toIndex].x
     by = sim.cogs[toIndex].y
-    dx = int64(bx) - int64(ax)
-    dy = int64(by) - int64(ay)
+    # MILLIMETRES, not micrometres: the projection takes a product of two
+    # world-scale deltas and then scales it by 1024, which at micrometre scale
+    # reaches 1.7e19 and leaves int64 behind. Dividing by 1000 first caps the
+    # product at 8.3e12 with no loss that matters to a 1.2 m clearance test.
+    dx = (int64(bx) - int64(ax)) div 1000
+    dy = (int64(by) - int64(ay)) div 1000
     len2 = dx * dx + dy * dy
   if len2 <= 0:
     return true
@@ -151,13 +155,13 @@ proc laneClear*(sim: SimServer, fromIndex, toIndex: int): bool =
     if teamOfCog(j) == team:
       continue
     let
-      px = int64(sim.cogs[j].x) - int64(ax)
-      py = int64(sim.cogs[j].y) - int64(ay)
+      px = (int64(sim.cogs[j].x) - int64(ax)) div 1000
+      py = (int64(sim.cogs[j].y) - int64(ay)) div 1000
     var t = (px * dx + py * dy) * 1024 div len2
     t = clamp(t, 0'i64, 1024'i64)
     let
-      cx = int64(ax) + dx * t div 1024
-      cy = int64(ay) + dy * t div 1024
+      cx = int64(ax) + dx * 1000 * t div 1024
+      cy = int64(ay) + dy * 1000 * t div 1024
       ex = int32(int64(sim.cogs[j].x) - cx)
       ey = int32(int64(sim.cogs[j].y) - cy)
     if distI(ex, ey) < 1_200_000'i32:
@@ -172,8 +176,8 @@ proc shootingLaneClear*(sim: SimServer, index: int): bool =
     gx = targetGoalX(team)
     ax = sim.cogs[index].x
     ay = sim.cogs[index].y
-    dx = int64(gx) - int64(ax)
-    dy = int64(CentreY) - int64(ay)
+    dx = (int64(gx) - int64(ax)) div 1000
+    dy = (int64(CentreY) - int64(ay)) div 1000
     len2 = dx * dx + dy * dy
   if len2 <= 0:
     return false
@@ -182,15 +186,15 @@ proc shootingLaneClear*(sim: SimServer, index: int): bool =
     if j == index:
       continue
     let
-      px = int64(sim.cogs[j].x) - int64(ax)
-      py = int64(sim.cogs[j].y) - int64(ay)
+      px = (int64(sim.cogs[j].x) - int64(ax)) div 1000
+      py = (int64(sim.cogs[j].y) - int64(ay)) div 1000
     var t = (px * dx + py * dy) * 1024 div len2
     if t <= 0 or t >= 1024:
       continue
     t = clamp(t, 0'i64, 1024'i64)
     let
-      cx = int64(ax) + dx * t div 1024
-      cy = int64(ay) + dy * t div 1024
+      cx = int64(ax) + dx * 1000 * t div 1024
+      cy = int64(ay) + dy * 1000 * t div 1024
       ex = int32(int64(sim.cogs[j].x) - cx)
       ey = int32(int64(sim.cogs[j].y) - cy)
     if distI(ex, ey) < 1_500_000'i32:

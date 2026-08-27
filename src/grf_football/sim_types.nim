@@ -21,7 +21,13 @@ import
 
 const
   GameName* = "grf-football"
-  GameVersion* = "3"  ## GV3 (the stop is a record): a wall-clock stop and a
+  GameVersion* = "4"  ## GV4 (a pass can be received): ControlSpeed was 12 m/s,
+    ## below the 14 m/s short pass, so a pass ricocheted off its receiver every
+    ## time and a whole certification episode finished 0-0 with a single shot.
+    ## It is now 18 m/s: a pass can be taken on arrival, a shot cannot.
+    ## Obsoletes GV3's chain.
+    ##
+    ## GV3 (the stop is a record): a wall-clock stop and a
     ## host error are WALL-CLOCK FACTS — nothing in sim state implies them — so
     ## banking them outside `sim.step` and then recording the tick's hash made
     ## every `deadline` replay diverge from its own re-simulation at the stop
@@ -118,7 +124,14 @@ const
   HighPassRange* = 40_000_000'i32
   PassLeadTicks* = 12'i32
   ControlRadius* = 1_100_000'i32
-  ControlSpeed* = 500_000'i32
+  ControlSpeed* = 750_000'i32
+    ## The ball's ground speed at or below which a cog TAKES it rather than
+    ## deflecting off it: 18 m/s. The design note pinned 12 m/s, which is BELOW
+    ## the 14 m/s short pass — so no pass could ever be received on arrival and
+    ## the certification episode finished 0-0 with one shot in a minute, every
+    ## pass ricocheting off its receiver. 18 m/s draws the line where football
+    ## draws it: you can control a pass (short 14, high 18), you cannot control
+    ## a shot (26) or a long ball at full pace (22).
   DeflectPct* = 45'i32
   DribbleOffset* = 700_000'i32       ## carried-ball offset, no mode set.
   DribbleOffsetOff* = 900_000'i32
