@@ -490,9 +490,13 @@ proc launchBall(sim: var SimServer, fromIndex: int, tx, ty, speed: int32,
   ## Sends the ball from a cog toward (tx, ty) at `speed`. A high pass follows
   ## an integer parabola whose apex is AirApex and whose flight lands on the
   ## target; everything else rolls.
+  # Launched CLEAR of the passer's own control radius, not just clear of its
+  # body: at 18 m/s a short pass is takeable on arrival, so a ball still inside
+  # the passer's reach would be re-taken by the passer on the same substep and
+  # no pass would ever leave anyone's feet.
   let u = unitQ12(tx - sim.cogs[fromIndex].x, ty - sim.cogs[fromIndex].y)
-  sim.ball.x = sim.cogs[fromIndex].x + q12Scale(CogRadius + BallRadius, u.x)
-  sim.ball.y = sim.cogs[fromIndex].y + q12Scale(CogRadius + BallRadius, u.y)
+  sim.ball.x = sim.cogs[fromIndex].x + q12Scale(ControlRadius + BallRadius, u.x)
+  sim.ball.y = sim.cogs[fromIndex].y + q12Scale(ControlRadius + BallRadius, u.y)
   sim.ball.vx = q12Scale(speed, u.x)
   sim.ball.vy = q12Scale(speed, u.y)
   sim.ball.controller = -1
@@ -787,6 +791,12 @@ proc resolveBallCogs(sim: var SimServer) =
     bestD = high(int32)
   for i in 0 ..< CogCount:
     if sim.cogs[i].groundedTicks > 0 or sim.cogs[i].slideTicks > 0:
+      continue
+    # A cog that has just played the ball cannot take it straight back: its own
+    # pass or shot cooldown is exactly the window in which it is committed.
+    # Without this the passer re-takes its own pass, because the ball now
+    # leaves at a speed the passer could control.
+    if sim.cogs[i].passCooldown > 0 or sim.cogs[i].shotCooldown > 0:
       continue
     let d = distI(sim.ball.x - sim.cogs[i].x, sim.ball.y - sim.cogs[i].y)
     if d < bestD:

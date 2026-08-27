@@ -98,12 +98,14 @@ proc restartForcesTheTakerIdle() =
 
 proc zonalBeatsGegenpress() =
   ## The ladder needs a spread: `gegenpress` sprints always, bottoms out its
-  ## stamina and fades. Played both ways round over one head-to-head fixture,
-  ## `zonal` must not lose on aggregate.
+  ## stamina around the third minute and then runs at 85 % while `zonal` still
+  ## has legs. The claim is about FOUR MINUTES, so the fixture is four minutes —
+  ## judging it over two tested a claim nobody made. Three seeds, both ways
+  ## round, six matches; `zonal` must not lose on aggregate.
   var zonalGoals = 0
   var pressGoals = 0
-  for seed in [679961, 1234567]:
-    let config = testConfig(seed = seed, maxTicks = 2880)
+  for seed in [679961, 1234567, 20260827]:
+    let config = testConfig(seed = seed, maxTicks = DefaultMaxTicks)
     let a = runScriptedMatch(config, red = "zonal", blue = "gegenpress")
     zonalGoals += a.goals[Red]
     pressGoals += a.goals[Blue]

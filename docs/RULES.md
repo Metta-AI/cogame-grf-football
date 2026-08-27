@@ -106,7 +106,11 @@ shot code from a cog that does not control the ball is recorded and ignored.
   ever be received on arrival and a whole certification episode finished 0–0
   with one shot, every pass ricocheting off its receiver. Eighteen draws the
   line where football draws it — you can control a pass, you cannot control a
-  shot (26 m/s) or a long ball at full pace (22 m/s). A faster ball
+  shot (26 m/s) or a long ball at full pace (22 m/s). Two consequences follow
+  and are part of the rule: a released ball is launched clear of the passer's
+  own control radius, and **a cog whose pass or shot cooldown is running cannot
+  take the ball** — otherwise a passer re-takes its own pass on the same
+  substep and no ball ever leaves anyone's feet. A faster ball
   deflects off the cog with restitution 45 %. A cog in possession carries the
   ball 0.9 m ahead of its velocity (0.55 m with dribble mode on).
 - **Slide tackle.** A 12-tick slide at 400 000 µm/tick along the held
