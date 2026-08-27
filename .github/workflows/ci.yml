@@ -170,11 +170,22 @@ jobs:
             --threads:on --mm:orc -o:bin/grf-football src/grf_football.nim
           nim c --hints:off -d:release --threads:on --mm:orc \
             -o:bin/grf-football-player src/grf_football_player.nim
-          tools/record_fixture.sh tests/fixtures/grf-679961.replay 679961 1440 \
-            '{"halfTicks": 720, "turnSpacingMs": 0, "wallClockBudgetSeconds": 180, "lobbyJoinTimeoutTicks": 720}'
+          # The certification fixture's SHAPE (seed 679961, 1440 ticks, two
+          # halves, no rate floor) but the engine's own 690 s wall-clock stop:
+          # the recording only has to be a COMPLETE episode of this commit, and
+          # pinning the fixture's budget at the cert value would let a busy
+          # runner turn the determinism gate's input into a `deadline`.
+          LOG=/tmp/grf-fixture-server.log tools/record_fixture.sh \
+            tests/fixtures/grf-679961.replay 679961 1440 \
+            '{"halfTicks": 720, "turnSpacingMs": 0, "lobbyJoinTimeoutTicks": 720}'
           python3 tools/replay_summary.py \
             tests/fixtures/grf-679961.replay > /tmp/fresh.json
-          python3 tools/ci/check_fixture.py /tmp/fresh.json
+          if ! python3 tools/ci/check_fixture.py /tmp/fresh.json; then
+            echo "::group::fixture server log (tail)"
+            tail -60 /tmp/grf-fixture-server.log || true
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - name: Upload the replay fixture
         uses: actions/upload-artifact@v4

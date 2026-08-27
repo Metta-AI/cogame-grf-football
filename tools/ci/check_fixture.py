@@ -24,11 +24,15 @@ checks = [
     ("episode completed",
      (summary.get("results") or {}).get("reason") == "complete"),
 ]
+reason = (summary.get("results") or {}).get("reason")
+rule = (summary.get("results") or {}).get("endRule")
 failed = [name for name, ok in checks if not ok]
 for name, ok in checks:
     print(("  ok   " if ok else "  FAIL ") + name)
 if failed:
-    print("::error::fixture is not a usable recording: " + ", ".join(failed))
+    print("::error::fixture is not a usable recording: " + ", ".join(failed)
+          + " (reason=%s endRule=%s ticks=%s)"
+          % (reason, rule, summary.get("tickCount")))
     sys.exit(1)
 print("fixture ok: %d ticks, hash chain %s"
       % (summary["tickCount"], summary["hashChain"]))
