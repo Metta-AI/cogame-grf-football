@@ -5,6 +5,11 @@
 ## shirt and no other; every field is inside its enum or clamp; `note` <= 160
 ## runes and `say` <= 48 runes; `pass_to` is always a teammate or null; and no
 ## order names a cog the seat does not command.
+##
+## `aFullScriptedEpisodeIsCompleteAndLegal` is the checklist's item 7 in one
+## test: ONE all-scripted episode played to the natural end, asserting both
+## `results.reason == "complete"` and the legality of every byte and every order
+## it emitted on the way there.
 
 import std/[json, random]
 import lib/helpers
@@ -207,6 +212,62 @@ proc theKeeperPlaysAGoalKick() =
         $actionCode(b)
   report "the built-in keeper on the ball plays a goal kick, never a carry"
 
+proc aFullScriptedEpisodeIsCompleteAndLegal() =
+  ## Acceptance checklist item 7, in ONE test: an all-scripted episode played to
+  ## its NATURAL END, asserting both halves together. Split across two tests at
+  ## two match lengths (the review's F15), neither half witnessed the other: a
+  ## baseline can play legally for 480 ticks and stall at 3000, or reach full
+  ## time while emitting an order nobody checked.
+  let config = testConfig(maxTicks = DefaultMaxTicks)
+  let match = runScriptedMatch(config, collectActions = true)
+
+  # (a) the episode reached its own end, on the clock.
+  let results = parseJson(match.resultsJson)
+  doAssert results["reason"].getStr == "complete",
+    "an all-scripted episode must end complete, got " &
+      results["reason"].getStr
+  doAssert results["endRule"].getStr == "full_time",
+    "and on the full-time whistle, got " & results["endRule"].getStr
+  doAssert match.reason == reasonComplete and match.rule == erFullTime
+  doAssert match.ticks >= config.maxTicks,
+    "full time means the whole clock was played, got " & $match.ticks
+  doAssert results["scores"].len == SeatCount
+
+  # (b) every action byte of every tick, from the same episode.
+  doAssert match.actions.len >= config.maxTicks,
+    "one frame of bytes per tick, got " & $match.actions.len
+  for t, frame in match.actions:
+    for i in 0 ..< CogCount:
+      let b = frame[i]
+      doAssert actionDir(b) >= 0 and actionDir(b) <= 8,
+        "illegal direction nibble at tick " & $t & " cog " & $i
+      doAssert actionCode(b) >= 0 and actionCode(b) <= 7,
+        "illegal action code at tick " & $t & " cog " & $i
+      let again = encodeAction(actionDir(b), actionCode(b), actionSprint(b))
+      doAssert again == b,
+        "the byte at tick " & $t & " cog " & $i & " does not round-trip"
+
+  # (c) every ORDER the baseline issued over the same episode.
+  doAssert match.orders.len >= SeatCount,
+    "the episode installed no orders"
+  for (seat, d) in match.orders:
+    let o = d.cog
+    doAssert d.source == dsScripted
+    doAssert d.note.runeCount <= MaxNoteRunes, "note over the cap"
+    doAssert o.say.runeCount <= MaxSayRunes, "say over the cap"
+    doAssert o.targetX >= PitchXMin and o.targetX <= PitchXMax,
+      "target x off the pitch"
+    doAssert o.targetY >= PitchYMin and o.targetY <= PitchYMax,
+      "target y off the pitch"
+    doAssert o.passTo == -1 or
+      (o.passTo >= 0 and o.passTo < CogCount and
+       teamOfCog(int(o.passTo)) == teamOfSeat(seat)),
+      "pass_to must be a teammate or null"
+    doAssert o.passTo != int32(cogOfSeat(seat)),
+      "an order must never pass to itself"
+    doAssert o.role == SeatRole[seat]
+  report "a full all-scripted episode ends complete with every order legal"
+
 when isMainModule:
   echo "test_control"
   everyByteIsLegal()
@@ -217,4 +278,5 @@ when isMainModule:
   chasingKeepsItsDirectionBits()
   theKeeperPlaysAGoalKick()
   zonalBeatsGegenpress()
+  aFullScriptedEpisodeIsCompleteAndLegal()
   echo "test_control ok"

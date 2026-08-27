@@ -63,6 +63,9 @@ type ScriptedMatch* = object
   reason*: EndReason
   rule*: EndRule
   actions*: seq[array[CogCount, uint8]]
+  orders*: seq[tuple[seat: int, directive: Directive]]
+    ## every order installed, seat by seat, in turn order
+  resultsJson*: string          ## the real `playerResultsJson()` document
 
 proc runScriptedMatch*(
   config: GameConfig,
@@ -101,6 +104,7 @@ proc runScriptedMatch*(
             else: sim.baselineDirective(seat, name, turn)
           sim.activeDirective[seat] = directives[seat]
           sim.hasDirective[seat] = true
+          result.orders.add((seat, directives[seat]))
     let actions = sim.compileActions(sim.activeDirective)
     if collectActions:
       result.actions.add(actions)
@@ -114,6 +118,7 @@ proc runScriptedMatch*(
   result.ticks = sim.tickCount
   result.reason = sim.endReason
   result.rule = sim.endRule
+  result.resultsJson = sim.playerResultsJson()
 
 proc strippedSource*(path: string): string =
   ## Reads a source file with `##`/`#` comments and string literals stripped,
