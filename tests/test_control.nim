@@ -156,6 +156,57 @@ proc chasingKeepsItsDirectionBits() =
     "a chasing cog keeps its direction bits, got dir 0"
   report "an arrived cog that is still chasing keeps its direction bits"
 
+proc theKeeperPlaysAGoalKick() =
+  ## Design note §The built-in AI item 1: "on possession, goal-kick `pass_long`
+  ## to the most open teammate beyond the halfway line, else `pass_short` to the
+  ## nearest full back". The keeper used to run the outfield safe option, which
+  ## carries the ball toward the far goal.
+  proc parked(): SimServer =
+    result = playing(testConfig())
+    for i in 0 ..< CogCount:
+      result.cogs[i].x = PitchXMin + 8_000_000'i32
+      result.cogs[i].y = PitchYMin + 2_000_000'i32 + int32(i) * 2_000_000'i32
+      result.cogs[i].vx = 0
+      result.cogs[i].vy = 0
+      result.cogs[i].dir = 0
+  let keeper = cogOfShirt(Red, 1)
+
+  block longBall:
+    var sim = parked()
+    let target = cogOfShirt(Red, 9)
+    sim.cogs[keeper].x = PitchXMin + 3_000_000'i32
+    sim.cogs[keeper].y = CentreY
+    sim.cogs[target].x = CentreX + 2_000_000'i32   ## just beyond halfway
+    sim.cogs[target].y = CentreY
+    sim.ball.controller = int32(keeper)
+    sim.ball.x = sim.cogs[keeper].x
+    sim.ball.y = sim.cogs[keeper].y
+    sim.ball.dead = false
+    doAssert sim.mostOpenBeyondHalfway(keeper) == target
+    let b = sim.builtinAction(keeper)
+    doAssert actionCode(b) == 2,
+      "a keeper on the ball plays a long goal kick, got code " &
+        $actionCode(b)
+    doAssert actionDir(b) == 3, "the goal kick points east, at the target"
+
+  block shortToTheFullBack:
+    var sim = parked()
+    ## Nobody past halfway: the short option to the nearer full back.
+    sim.cogs[keeper].x = PitchXMin + 3_000_000'i32
+    sim.cogs[keeper].y = CentreY
+    sim.ball.controller = int32(keeper)
+    sim.ball.x = sim.cogs[keeper].x
+    sim.ball.y = sim.cogs[keeper].y
+    sim.ball.dead = false
+    doAssert sim.mostOpenBeyondHalfway(keeper) == -1
+    let back = sim.nearestFullBack(keeper)
+    doAssert back == cogOfShirt(Red, 2) or back == cogOfShirt(Red, 3)
+    let b = sim.builtinAction(keeper)
+    doAssert actionCode(b) == 1,
+      "with nothing on beyond halfway the keeper plays short, got code " &
+        $actionCode(b)
+  report "the built-in keeper on the ball plays a goal kick, never a carry"
+
 when isMainModule:
   echo "test_control"
   everyByteIsLegal()
@@ -164,5 +215,6 @@ when isMainModule:
   controlAlwaysActuates()
   restartForcesTheTakerIdle()
   chasingKeepsItsDirectionBits()
+  theKeeperPlaysAGoalKick()
   zonalBeatsGegenpress()
   echo "test_control ok"

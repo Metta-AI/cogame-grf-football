@@ -282,6 +282,64 @@ proc safeOnBall*(sim: SimServer, index: int): tuple[code, dir: int32] =
     return (1'i32, sim.dirTowardCog(index, mate))
   (0'i32, dirOfVector(gx - sim.cogs[index].x, CentreY - sim.cogs[index].y))
 
+proc mostOpenBeyondHalfway*(sim: SimServer, index: int): int =
+  ## The teammate with the most space around it, on the far side of the halfway
+  ## line and inside long-pass range — the keeper's goal-kick target.
+  let
+    team = teamOfCog(index)
+    dir = attackDir(team)
+  var
+    best = -1
+    bestOpen = low(int32)
+  for j in 0 ..< CogCount:
+    if j == index or teamOfCog(j) != team:
+      continue
+    if int64(sim.cogs[j].x - CentreX) * int64(dir) <= 0:
+      continue
+    let d = distI(sim.cogs[j].x - sim.cogs[index].x,
+      sim.cogs[j].y - sim.cogs[index].y)
+    if d <= 0 or d > LongPassRange:
+      continue
+    let open = sim.nearestOpponentDist(j)
+    if open > bestOpen:
+      bestOpen = open
+      best = j
+  best
+
+proc nearestFullBack*(sim: SimServer, index: int): int =
+  ## The nearer of the two full backs (shirts 2 and 3) — the keeper's short
+  ## option when nothing is on beyond the halfway line.
+  let team = teamOfCog(index)
+  var
+    best = -1
+    bestD = high(int32)
+  for shirt in [2, 3]:
+    let j = cogOfShirt(team, shirt)
+    if j == index:
+      continue
+    let d = distI(sim.cogs[j].x - sim.cogs[index].x,
+      sim.cogs[j].y - sim.cogs[index].y)
+    if d < bestD:
+      bestD = d
+      best = j
+  best
+
+proc keeperOnBall*(sim: SimServer, index: int): tuple[code, dir: int32] =
+  ## Design note §The built-in AI item 1: on possession the keeper plays a goal
+  ## kick — `pass_long` to the most open teammate beyond the halfway line, else
+  ## `pass_short` to the nearest full back. A keeper does not run the outfield
+  ## safe option, whose first branch under pressure is a short pass and whose
+  ## second is a SHOT (its own goal is behind it, so `goalDist` is the length of
+  ## the pitch and the shot never fires — it carried the ball out of its area
+  ## instead).
+  let long = sim.mostOpenBeyondHalfway(index)
+  if long >= 0:
+    return (2'i32, sim.dirTowardCog(index, long))
+  let back = sim.nearestFullBack(index)
+  if back >= 0:
+    return (1'i32, sim.dirTowardCog(index, back))
+  sim.safeOnBall(index)
+
 proc wantsTackle*(sim: SimServer, index: int): bool =
   ## Deterministic, never probabilistic: an opponent controls the ball inside
   ## TackleRadius and this cog is closing on it within 45 degrees.
@@ -364,12 +422,21 @@ proc builtinAction*(sim: SimServer, index: int): uint8 =
     codeDir = 0'i32
 
   if sim.ball.controller == int32(index):
-    let safe = sim.safeOnBall(index)
-    code = safe.code
-    codeDir = safe.dir
-    let gx = targetGoalX(team)
-    px = gx
-    py = CentreY
+    let onBall =
+      if isKeeper(index): sim.keeperOnBall(index)
+      else: sim.safeOnBall(index)
+    code = onBall.code
+    codeDir = onBall.dir
+    if isKeeper(index):
+      # A keeper with the ball goes nowhere: it is releasing it. Steering at the
+      # far goal would walk it out of its own area if the release is dropped.
+      let t = sim.keeperTarget(index)
+      px = t.x
+      py = t.y
+    else:
+      let gx = targetGoalX(team)
+      px = gx
+      py = CentreY
     # Dribble mode is always in a defined state: on when carrying under
     # pressure, off otherwise.
     if code == 0:

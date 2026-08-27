@@ -124,7 +124,10 @@ shot code from a cog that does not control the ball is recorded and ignored.
 - **Keeper.** Shirt 1, always built-in AI. Inside its own penalty area it
   **catches** a ball within 1.5 m at ≤ 18 m/s → dead ball, `save`, goal-kick
   restart. A faster ball is **parried**: reflected with restitution 60 % and
-  capped at 12 m/s. Outside its area the keeper is an ordinary cog.
+  capped at 12 m/s. Outside its area the keeper is an ordinary cog. **With
+  the ball at its feet the keeper plays a goal kick**: `pass_long` to the
+  most open teammate beyond the halfway line, else `pass_short` to the
+  nearer full back (shirt 2 or 3). It never carries the ball up-field.
 - **Cog–cog contact.** Circle separation, each pushed half the penetration,
   normal impulse with restitution 20 %. No fouls arise from this.
 - **Boundaries.** A cog's centre is clamped inside the board box; cogs never
