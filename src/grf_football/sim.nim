@@ -134,6 +134,15 @@ proc modeSpeed*(sim: SimServer, index: int): int32 =
 # Construction and placement
 # --------------------------------------------------------------------------
 
+proc draw*(sim: var SimServer, max: int): int =
+  ## THE ONLY place the seeded sim RNG is read. `Rand`'s state is private to
+  ## std/random and therefore cannot enter `gameHash`, so every draw bumps a
+  ## HASHED counter instead: a stream that has drifted by one draw then shows
+  ## up at the tick it drifted on, not five hundred ticks later as a shot that
+  ## went the wrong way.
+  inc sim.rngDraws
+  sim.rng.rand(max)
+
 proc formationReset*(sim: var SimServer, kickingTeam: int32, staminaBoost: int32)
 
 proc initSimServer*(config: GameConfig): SimServer =
@@ -260,7 +269,7 @@ proc formationReset*(
     let
       team = teamOfCog(i)
       shirt = int(sim.cogs[i].shirt)
-      jitter = int32(sim.rng.rand(600_000) - 300_000)
+      jitter = int32(sim.draw(600_000) - 300_000)
     let
       ax = anchorXFor(team, shirt)
       ay = clamp(anchorYFor(team, shirt) + jitter, PitchYMin, PitchYMax)
@@ -555,7 +564,7 @@ proc releaseOnBall(sim: var SimServer, index: int, code: int32, dir: int32) =
           sim.cogs[j].y - sim.cogs[index].y) <= 2_000_000'i32:
         e += 4
         break
-    let err = int32(sim.rng.rand(2 * e) - e)
+    let err = int32(sim.draw(2 * e) - e)
     let base = bradsOfVectorI(aim.x - sim.cogs[index].x,
       aim.y - sim.cogs[index].y)
     let b = ((base + err) mod 256 + 256) mod 256

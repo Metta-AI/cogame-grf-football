@@ -21,7 +21,16 @@ import
 
 const
   GameName* = "grf-football"
-  GameVersion* = "1"  ## GV1 (first rules): eleven-a-side association football
+  GameVersion* = "2"  ## GV2 (strict chain): the RNG DRAW COUNT and every other
+    ## field the step writes are now in `gameHash`. The seeded sim RNG is read
+    ## by the step (kickoff jitter, shot aim error) but its state is private to
+    ## `std/random`, so it could not be hashed directly and a drifted stream
+    ## surfaced only later, as a wrong shot — a recorded episode diverged from
+    ## its own re-simulation ~500 ticks after the drift with nothing to say
+    ## where. A hashed draw COUNTER pins it to the tick it happens on.
+    ## Obsoletes GV1's chain: a GV1 replay will not verify against this build.
+    ##
+    ## GV1 (first rules): eleven-a-side association football
     ## on an 84x54 m pitch, 22 cogs and 8 seats. Integer micrometre physics at
     ## 24 Hz with four substeps a tick, a 19-action gfootball byte as the
     ## recorded action log, a 240-tick decision turn, two halves of 2880 ticks,
@@ -468,6 +477,11 @@ type
     teamStats*: array[Team, TeamStats]
     seatStats*: array[SeatCount, SeatStats]
     rng*: Rand
+    rngDraws*: int32
+      ## How many draws have been taken from `rng`. HASHED: `Rand`'s own state
+      ## is private to std/random, so this counter is the only way the chain
+      ## can see a stream that has drifted. Every draw goes through
+      ## `sim.draw`, which is the only place `rng` is touched.
     nextJoinOrder*: int32
     tickCount*: int
     gameStartTick*: int

@@ -99,6 +99,24 @@ proc gameHash*(sim: SimServer): uint64 =
   result.mixHashI32(sim.anchorY)
   result.mixHashBool(sim.needsReregister)
   result.mixHashI32(sim.nextJoinOrder)
+  # The RNG's own state is private to std/random; the DRAW COUNT stands in for
+  # it, and it is the reason a drifted stream is caught on the tick it drifts.
+  result.mixHashI32(sim.rngDraws)
+  result.mixHashInt(sim.lobbyWaitTimer)
+  # Every remaining field the step writes. These are all set INSIDE the step on
+  # both sides of the native/wasm boundary, so hashing them costs nothing and
+  # makes the chain say exactly which write diverged.
+  result.mixHashI32(sim.lastGoalTick)
+  result.mixHashI32(sim.lastGoalTeam)
+  result.mixHashI32(sim.lastGoalBy)
+  result.mixHashI32(sim.lastGoalAssist)
+  result.mixHashI32(sim.lastGoalSpeed)
+  result.mixHashI32(sim.lastDropTick)
+  result.mixHashI32(sim.lastRestartTick)
+  result.mixHashI32(sim.lastHalfTimeTick)
+  result.mixHashInt(sim.trail.len)
+  result.mixHashInt(sim.arcs.len)
+  result.mixHashInt(sim.goalFx.len)
   result.mixHashI32(sim.ball.x)
   result.mixHashI32(sim.ball.y)
   result.mixHashI32(sim.ball.vx)
@@ -125,6 +143,7 @@ proc gameHash*(sim: SimServer): uint64 =
     result.mixHashBool(cog.slideTouchedBall)
     result.mixHashI32(cog.team)
     result.mixHashI32(cog.shirt)
+    result.mixHashI32(cog.seat)
   for team in Team:
     result.mixHashI32(sim.teamStats[team].goals)
     result.mixHashI32(sim.teamStats[team].shots)
