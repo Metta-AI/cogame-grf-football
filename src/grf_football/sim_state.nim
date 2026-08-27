@@ -180,6 +180,94 @@ proc gameHash*(sim: SimServer): uint64 =
     result.mixHashI32(player.joinOrder)
     result.mixHashI32(player.seat)
 
+const StateDigestTicks* = 120
+  ## How often the server records a state checkpoint into the replay (5 s of
+  ## match time). The hash chain says a replay diverged; a checkpoint says
+  ## WHICH FIELD did, which is the difference between a bug you can fix and a
+  ## bug you can only observe. At ~3 KB a checkpoint this is ~145 KB on a full
+  ## match — the replay budget is 1.5 MB.
+
+proc stateDigest*(sim: SimServer): string =
+  ## Every field `gameHash` mixes, as `name=value;` text. Recorded by the
+  ## server every StateDigestTicks and compared by `tools/ci/rehash_probe.nim`
+  ## against its own re-simulation, so a divergence names the field instead of
+  ## just the tick.
+  result = newStringOfCap(4096)
+  template put(name: string, value: untyped) =
+    result.add(name)
+    result.add('=')
+    result.add($value)
+    result.add(';')
+  put("tick", sim.tickCount)
+  put("phase", ord(sim.phase))
+  put("winner", ord(sim.winner))
+  put("draw", ord(sim.isDraw))
+  put("ended", ord(sim.ended))
+  put("reason", ord(sim.endReason))
+  put("rule", ord(sim.endRule))
+  put("overTimer", sim.gameOverTimer)
+  put("gameStart", sim.gameStartTick)
+  put("startWait", sim.startWaitTimer)
+  put("lobbyWait", sim.lobbyWaitTimer)
+  put("half", sim.half)
+  put("rsKind", ord(sim.restartKind))
+  put("rsTeam", sim.restartTeam)
+  put("rsTaker", sim.restartTaker)
+  put("rsTicks", sim.restartTicks)
+  put("rsX", sim.restartX)
+  put("rsY", sim.restartY)
+  put("stale", sim.stalemateTicks)
+  put("anchorX", sim.anchorX)
+  put("anchorY", sim.anchorY)
+  put("rngDraws", sim.rngDraws)
+  put("joinOrder", sim.nextJoinOrder)
+  put("players", sim.players.len)
+  put("ballX", sim.ball.x)
+  put("ballY", sim.ball.y)
+  put("ballVX", sim.ball.vx)
+  put("ballVY", sim.ball.vy)
+  put("ballZ", sim.ball.z)
+  put("ballVZ", sim.ball.vz)
+  put("ballCtrl", sim.ball.controller)
+  put("ballDead", ord(sim.ball.dead))
+  put("touchCog", sim.lastTouch.cog)
+  put("touchTick", sim.lastTouch.tick)
+  put("prevCog", sim.prevTouch.cog)
+  put("prevTick", sim.prevTouch.tick)
+  put("passCog", sim.pendingPass.cog)
+  put("passTick", sim.pendingPass.tick)
+  put("shotCog", sim.pendingShotCog)
+  put("shotTick", sim.pendingShotTick)
+  put("trail", sim.trail.len)
+  put("arcs", sim.arcs.len)
+  put("goalFx", sim.goalFx.len)
+  for team in Team:
+    let p = "t" & $ord(team)
+    put(p & "goals", sim.teamStats[team].goals)
+    put(p & "shots", sim.teamStats[team].shots)
+    put(p & "sot", sim.teamStats[team].shotsOnTarget)
+    put(p & "saves", sim.teamStats[team].saves)
+    put(p & "poss", sim.teamStats[team].possessionTicks)
+    put(p & "passes", sim.teamStats[team].passes)
+    put(p & "tackles", sim.teamStats[team].tackles)
+  for i in 0 ..< CogCount:
+    let
+      c = sim.cogs[i]
+      p = "c" & $i
+    put(p & "x", c.x)
+    put(p & "y", c.y)
+    put(p & "vx", c.vx)
+    put(p & "vy", c.vy)
+    put(p & "dir", c.dir)
+    put(p & "spr", ord(c.sprinting))
+    put(p & "dri", ord(c.dribbling))
+    put(p & "sta", c.stamina)
+    put(p & "sl", c.slideTicks)
+    put(p & "gr", c.groundedTicks)
+    put(p & "pc", c.passCooldown)
+    put(p & "sc", c.shotCooldown)
+    put(p & "stb", ord(c.slideTouchedBall))
+
 proc emitEvent*(
   sim: var SimServer,
   kind: SimEventKind,

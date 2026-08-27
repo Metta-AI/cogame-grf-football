@@ -723,6 +723,16 @@ proc runServerLoop*(
           sim.step(stepped, prevActions)
           prevActions = stepped
           replayWriter.writeHash(uint32(sim.tickCount), sim.gameHash())
+          # A state checkpoint every StateDigestTicks. The hash chain says a
+          # replay diverged; this says WHICH FIELD did, so
+          # tools/ci/rehash_probe.nim can name it instead of only naming the
+          # tick. Written straight to the chat stream (not through
+          # recordAndWrite): it is diagnostic, it is not a game record, and it
+          # must not be shrunk by the 900-rune record cap.
+          if sim.tickCount mod StateDigestTicks == 0:
+            replayWriter.writeChat(tickTime(sim.tickCount), 0,
+              $(%*{"k": "state", "t": sim.tickCount,
+                   "d": sim.stateDigest()}))
           if sim.collectEvents:
             for event in sim.events:
               collectedEvents.add(event)
