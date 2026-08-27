@@ -1,0 +1,17 @@
+version     = "0.1.0"
+author      = "Metta-AI"
+description = "Eleven-a-side 2D physics football with a gfootball-style discrete action set."
+license     = "MIT"
+
+srcDir = "src"
+
+requires "nim >= 2.2.4"
+requires "bitworld >= 0.1.0"
+requires "pixie"
+requires "mummy >= 0.4.7"
+requires "curly >= 1.1.1"
+requires "whisky >= 0.1.3"
+requires "supersnappy >= 2.1.3"
+requires "jsony"
+requires "zippy"
+requires "flatty >= 0.3.4"

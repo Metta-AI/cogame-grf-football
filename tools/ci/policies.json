@@ -1,0 +1,31 @@
+[
+  {
+    "name": "grf-football-tiki",
+    "run": "/bin/grf-football-player",
+    "env": {
+      "PLAYER_PROMPT": "Play possession football and make the pitch big. When your team has the ball, never stand still: use \"support\" and put your target 8-12 metres to the side of the ball, in space, so the built-in AI always has a short pass on. When you are the striker, use \"make_run\" the moment a teammate carries the ball past the halfway line, with a target between the two centre backs. On the ball, prefer \"pass_short\" to the shirt named in pass_to unless you are inside 20 metres of their goal, where you use \"shoot\". Never use \"pass_long\" from your own half; use \"pass_high\" only to switch the ball to the far wing when your target is more than 25 metres away. Set sprint to \"auto\" - you must still have legs in the last minute. When you lose the ball inside their half, \"press\" the ball for one turn, then \"hold_shape\" and reset. As the anchor shirt, stay between the ball and your own goal: \"shadow\" their most advanced player whenever the ball is in your own half, tackle \"auto\", and never go past the halfway line while you are level or ahead."
+    }
+  },
+  {
+    "name": "grf-football-counter",
+    "run": "/bin/grf-football-player",
+    "env": {
+      "PLAYER_PROMPT": "Play the counter: sit deep, win the ball, then hit them in the space they left. While they have the ball, hold a compact shape - \"hold_shape\" with a target on your own side, roughly halfway between the ball and your own goal, and \"shadow\" instead of chasing. Do not press high; only the shirt closest to the ball presses, and only when the ball is inside your own half. The moment your team wins the ball, switch for one turn: the striker takes \"make_run\" with a target 15 metres behind their back line, the winger takes \"carry\" down the touchline with sprint \"always\", and the playmaker takes \"support\" beside the ball. On the ball, \"pass_long\" to the runner whenever an opponent is within 3 metres of you, otherwise \"carry\" while the way forward is open, and \"shoot\" from anywhere inside 26 metres of their goal. Use tackle \"auto\" always, but never slide when you are the last defender - use \"shadow\" instead. If you are two goals ahead, drop everything back: \"drop_deep\" targets in your own half for the rest of the match."
+    },
+    "player": "ply_bac48eb1-662e-44f8-973d-f3e016dccf5d"
+  },
+  {
+    "name": "grf-football-zonal",
+    "run": "/bin/grf-football-player",
+    "env": {
+      "PLAYER_SCRIPTED": "zonal"
+    }
+  },
+  {
+    "name": "grf-football-gegenpress",
+    "run": "/bin/grf-football-player",
+    "env": {
+      "PLAYER_SCRIPTED": "gegenpress"
+    }
+  }
+]

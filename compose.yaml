@@ -1,0 +1,7 @@
+services:
+  grf-football:
+    image: coworld-grf-football:latest
+    platform: linux/amd64
+    build:
+      context: .
+      network: host

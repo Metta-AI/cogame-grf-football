@@ -1,0 +1,704 @@
+{
+  "game": {
+    "name": "grf-football",
+    "owner": "daveey@gmail.com",
+    "description": "Eleven-a-side association football in a continuous 2D physics world: 22 cogs, one ball, throw-ins, corners and goal kicks. A policy is just a prompt — every ten seconds you issue ONE order for your shirt and a deterministic controller executes it.",
+    "runnable": {
+      "type": "game",
+      "image": "{{GRF_FOOTBALL_IMAGE}}",
+      "run": [
+        "/bin/grf-football"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY_URI": "secret://coworld/grf-football/anthropic_api_key"
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-grf-football/tree/main"
+    },
+    "replay_viewer": {
+      "bundle": "static-replay-viewer"
+    },
+    "protocols": {
+      "player": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/cogame-grf-football/blob/main/docs/PROTOCOL.md"
+      },
+      "global": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/cogame-grf-football/blob/main/docs/PROTOCOL.md"
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "text",
+        "value": "# grf-football\n\n**Eleven-a-side association football in a continuous 2D physics world.**\nTwenty-two wheeled cogs and one ball on an 84 m × 54 m pitch; the ball goes out\n(throw-ins, corners, goal kicks); goals win the match. It reimplements the\n*spirit* of Google Research Football — 11 v 11, a nineteen-action discrete\nvocabulary, and unseated players run by the engine's built-in AI — as a new\nphysics game written for this coworld.\n\n**A policy is just a prompt.** A seat does not drive a joystick. Every ten\nseconds of match time it issues ONE order for its shirt — a role, an intent, a\ntarget point, an on-ball choice, sprint and tackle permissions — and a\ndeterministic control layer executes it for the next ten seconds. Twenty-four\nturns, one order each.\n\n```\n                             +27 m\n   RED     ┌───────────────────────────────────┐     BLUE\n   goal  ▐│  RED-6      RED-10   (o)  BLUE-9   │▌   goal\n         ▐│      RED-7        BLUE-6     BLUE-7│▌\n          └───────────────────────────────────┘\n                             −27 m\n```\n\n* [docs/RULES.md](docs/RULES.md) — the pitch, the physics, the nineteen\n  actions, the restart table, the scoring and the determinism contract.\n* [docs/PROTOCOL.md](docs/PROTOCOL.md) — the runtime contract, the seat\n  protocol, the `COWLDFTB` replay bytes and the results document.\n* [docs/COACHING.md](docs/COACHING.md) — how to write a grf-football prompt.\n\n## Seats and scoring\n\n`num_agents` is **8**: four seats a side, one outfield shirt each (`RED-10`,\n`RED-9`, `RED-7`, `RED-6` and the blue mirror). The other seven shirts a side,\nkeeper included, are the built-in AI. Team zero-sum and margin-sensitive:\n\n```\nscore(seat) = 0.5 + 0.5 · clamp((goals_you − goals_them) / 3, −1, +1)\n```\n\n3–0 or better = 1.000; 1–0 = 0.667; any draw = 0.500. Higher is better; the\neight scores always sum to 4.000.\n\n## Playing\n\nOne image, two entrypoints, every policy env-switched:\n\n```bash\n# the game\ndocker run --rm -e COGAME_CONFIG_URI=file:///coworld/config.json \\\n  coworld-grf-football:latest /bin/grf-football\n\n# an LLM seat\ndocker run --rm -e COWORLD_PLAYER_WS_URL=ws://game:8080/player?slot=0 \\\n  -e PLAYER_PROMPT=\"Play possession football and make the pitch big…\" \\\n  coworld-grf-football:latest /bin/grf-football-player\n\n# a scripted seat\ndocker run --rm -e COWORLD_PLAYER_WS_URL=ws://game:8080/player?slot=1 \\\n  -e PLAYER_SCRIPTED=zonal \\\n  coworld-grf-football:latest /bin/grf-football-player\n```\n\n`zonal` is the reference baseline (hold the zone, support the ball, press when\nit is close) and also the fallback whenever a decision call fails twice.\n`gegenpress` is the second filler — press everywhere, sprint always — which\nfades on stamina around the third minute, so the ladder has a spread.\n\n## Watching\n\nThe replay ships as a **static wasm bundle**, never a pod:\n`tools/build_replay_viewer.sh` builds `replay-viewer/grf_football_replay.nim` —\nwhich imports the **same** `src/grf_football/sim.nim` the native server ran —\nthrough the pinned `emscripten/emsdk:4.0.15` container, and the browser\nre-simulates the recorded action log and checks the recorded `gameHash` every\ntick.\n\nThe broadcast chrome shows: the score bug (goals, shots on target, possession),\nthe clock with the half and turn, a plain-language match feed carrying the\nseats' own notes and shouts, a ball trail tinted by the last toucher with a\nshadow while the ball is airborne, pass arcs and shot streaks, a goal\ncelebration, an **instant slow-mo goal replay**, a possession bar, and the\nseated-shirt rings that say at a glance which four cogs a side are being played\nby a policy.\n\n## Layout\n\n```\nsrc/grf_football.nim           game entrypoint (seed randomisation lives here)\nsrc/grf_football_player.nim    every policy: registers, then idles\nsrc/grf_football/\n  sim_types.nim                consts (incl. GameVersion), types, the action byte\n  trig.nim                     the committed SinQ12 table, isqrt, bradsOfVectorI\n  pitch.nim                    geometry, the out tests, the restart spots\n  sim.nim                      the integer physics core and the step loop\n  builtin_ai.nim               the fourteen unseated shirts and the safe option\n  control.nim                  order -> 22 action bytes (integer only)\n  directives.nim               view coordinates, rune truncation, the parser\n  baselines.nim                the zonal and gegenpress scripted policies\n  llm.nim                      the credential ladder and transport\n  decide.nim                   the turn engine: ONE parallel batch of eight\n  server.nim                   mummy HTTP/ws, the COGAME_* contract, the loop\n  replays.nim                  the COWLDFTB codec, keyframes, the scan\n  global.nim                   the board renderer\n  broadcast.nim                the chrome JSON channel and the record fold-back\n  rig_art.nim                  the wheeled-rig compositor and the shirt chips\nreplay-viewer/                 the emscripten entry point and the worker\nclient/                        the broadcast chrome (kept from coworld-ctf)\ntools/                         build hooks, forensics, CI helpers\ntests/                         the determinism gate and thirteen suites around it\n```\n\n## Building and testing\n\nThe repo builds with [nimby](https://github.com/treeform/nimby):\n\n```bash\nnimby --global sync nimby.lock\nnim r --path:src tests/test_determinism.nim\n```\n\nCI runs every `tests/*.nim` twice — debug (range and overflow checks) and\n`-d:release` — plus a raw-Docker episode smoke and the wasm bundle build with\nthe native↔wasm determinism gate. See `.github/workflows/ci.yml`.\n\nDesign notes live in `docs/plans/`. The lineage is\n[`Metta-AI/coworld-ctf`](https://github.com/Metta-AI/coworld-ctf) (paintbot):\nthe game loop, the per-tick replays, the static wasm viewer, the broadcast\nchrome and the CI wiring are its, kept; the football rules replace the arena\nrules.\n"
+      },
+      "pages": [
+        {
+          "id": "rules.md",
+          "title": "Rules",
+          "content": {
+            "type": "text",
+            "value": "# grf-football — rules\n\n**grf-football is eleven-a-side association football** on an 84 m × 54 m pitch\nin a continuous 2D top-down physics world. Twenty-two wheeled cogs and one\nball; the ball can leave the pitch (throw-ins, corners, goal kicks); goals win\nthe match. It reimplements the *spirit* of Google Research Football — 11 v 11,\na nineteen-action discrete vocabulary, and unseated players run by the engine's\nbuilt-in AI — as a new physics game written for this coworld.\n\n## Seats\n\n`num_agents` is **8**. Four seats per team; each seat commands exactly one\noutfield shirt for the whole match. The other seven shirts on each side —\nincluding the keeper — are driven by the engine's built-in AI.\n\n| seat | team | shirt | role |\n|---|---|---|---|\n| 0 | red | `RED-10` | playmaker |\n| 1 | blue | `BLUE-10` | playmaker |\n| 2 | red | `RED-9` | striker |\n| 3 | blue | `BLUE-9` | striker |\n| 4 | red | `RED-7` | winger |\n| 5 | blue | `BLUE-7` | winger |\n| 6 | red | `RED-6` | anchor |\n| 7 | blue | `BLUE-6` | anchor |\n\nSeat → team → shirt is derived from the seat index alone, so it needs no\nconfig: seat parity **is** the team. A seat does not drive a joystick. Every\nten seconds of match time it issues **one order** for its shirt, and a\ndeterministic control layer executes it for the next ten seconds. See\n[COACHING.md](COACHING.md).\n\n## The pitch\n\nAll world quantities are integer **micrometres** (µm) and **µm per tick**. The\ncoordinates a policy sees are **view coordinates**: metres from the centre\nspot, `X = (x − 45 m)`, `Y = (y − 30 m)`, so the pitch is X ∈ [−42, +42],\nY ∈ [−27, +27]. Red attacks `+X` and defends `−42`; blue mirrors it. **Ends are\nnot swapped at half-time**, so every recorded coordinate means one thing for\nthe whole replay.\n\n| thing | value |\n|---|---|\n| map scale | 1 map pixel = 75 000 µm (0.075 m) |\n| board | 1200 × 800 map px → 90 m × 60 m including the 3 m surround |\n| playing surface | x ∈ [3 m, 87 m], y ∈ [3 m, 57 m] — **84 m × 54 m** |\n| centre spot / circle | (45 m, 30 m), r = 9 m |\n| goal mouths | the planes x = 3 m and x = 87 m, y ∈ [26 m, 34 m] — 8 m wide |\n| goal netting | 2.4 m deep behind each mouth |\n| goalposts | static circles, r = 0.1 m, at the four mouth corners |\n| penalty areas | x ≤ 19 m / x ≥ 71 m, \\|y − 30 m\\| ≤ 20 m — 16 m × 40 m |\n| six-yard boxes | x ≤ 8.5 m / x ≥ 81.5 m, \\|y − 30 m\\| ≤ 10 m |\n| surround | the 3 m band outside the pitch; cogs may stand in it |\n| cog radius / ball radius | 0.5 m / 0.22 m |\n| neutral drop spots | (±21 m, ±13.5 m) in view coordinates |\n\n## Time\n\n24 ticks per second. A match is **5760 ticks = 240 s = 4:00**, played as **two\nhalves of 2880 ticks**, divided into **24 decision turns of 240 ticks (10.0 s)**\n— twelve per half. Each tick integrates **four substeps** of 1/96 s, so the\nfastest ball (32 m/s) moves 0.33 m per substep, less than its 0.44 m diameter,\nand cannot tunnel through a cog or a post.\n\n## The nineteen actions\n\nA cog's action for one tick is exactly **one `uint8`** — the same byte the\nreplay records and the wasm viewer replays.\n\n| bits | field | values |\n|---|---|---|\n| 0–3 (`b and 0x0F`) | direction | `0` = none (release_direction / idle), `1..8` = N, NE, E, SE, S, SW, W, NW (screen convention, y down). `9..15` are illegal → read as `0`. |\n| 4–6 (`(b shr 4) and 0x07`) | one-shot action | `0` none, `1` short_pass, `2` long_pass, `3` high_pass, `4` shot, `5` slide, `6` dribble_on, `7` dribble_off |\n| 7 (`b and 0x80`) | sprint | set = sprint held; clear = release_sprint |\n\nThat is gfootball's nineteen actions exactly. `sprint` and `dribble` are\n**sticky modes**; the rest are one-shot and cleared after resolution. A pass or\nshot code from a cog that does not control the ball is recorded and ignored.\n\n## Bodies\n\n- **Cog movement.** Target velocity = the direction unit vector × the mode\n  speed; velocity moves toward it by at most `Accel = 25 000` µm/tick² per\n  tick, and decays by `v -= v·96/1024` when the direction is `0`. Mode speeds:\n  base **250 000** µm/tick (6.0 m/s), sprint **337 500** (8.1 m/s), dribble\n  **200 000** (4.8 m/s), keeper base **229 000** (5.5 m/s).\n- **Stamina.** 0..1000, starts 1000, −6 per sprinting tick, +2 otherwise. Below\n  200 every mode speed is ×85 %; below 50 the sprint bit is ignored. Stamina is\n  in `gameHash`.\n- **Ball on the ground.** `v -= v·7/1024` per tick, capped at 32 m/s.\n- **Ball in the air** (high pass only). `z` follows an integer parabola with a\n  4 m apex; gravity is 4 340 µm/tick². An airborne ball ignores cogs until\n  `z ≤ 0.4 m`.\n- **Passes.** Short: ground, 14 m/s, max range 25 m. Long: ground, 22 m/s, max\n  45 m. High: airborne, 18 m/s, max 40 m. The receiver is the teammate with the\n  best `passScore` inside a ±50° cone about the passer's **direction bits**;\n  `passScore = openness_mm − 2 × distance_to_own_goal_mm`. The ball is aimed at\n  the receiver's position + its velocity × 12 ticks.\n- **Shots.** 26 m/s, aimed at the goal-mouth point furthest from the keeper.\n  Aim error in brads is `rng.rand(2·E) − E` with `E = 2 + dist_m/6 + (4 if an\n  opponent is within 2 m)`, drawn from the seeded sim RNG.\n- **Control and interception.** After ball motion, the cog nearest the ball\n  within 1.1 m takes possession **iff** the ball's ground speed ≤ 12 m/s and it\n  is not grounded or sliding; ties by ascending cog index. A faster ball\n  deflects off the cog with restitution 45 %. A cog in possession carries the\n  ball 0.9 m ahead of its velocity (0.55 m with dribble mode on).\n- **Slide tackle.** A 12-tick slide at 400 000 µm/tick along the held\n  direction; the collision radius grows to 0.9 m and the direction cannot\n  change. Reaching the ball first knocks it loose (`tackle`). Reaching an\n  **opponent** without having touched the ball on any tick of the slide is a\n  **foul**: the tackler is grounded for 48 ticks and the opponent gets an\n  indirect free kick. After any slide the cog is grounded for 24 ticks. There\n  are no cards and no penalties — a foul in the penalty area is a free kick on\n  the 16 m line.\n- **Keeper.** Shirt 1, always built-in AI. Inside its own penalty area it\n  **catches** a ball within 1.5 m at ≤ 18 m/s → dead ball, `save`, goal-kick\n  restart. A faster ball is **parried**: reflected with restitution 60 % and\n  capped at 12 m/s. Outside its area the keeper is an ordinary cog.\n- **Cog–cog contact.** Circle separation, each pushed half the penetration,\n  normal impulse with restitution 20 %. No fouls arise from this.\n- **Boundaries.** A cog's centre is clamped inside the board box; cogs never\n  leave the board. Only the ball goes out of play.\n\n## Out of play and restarts\n\nThe ball is **out** when its centre crosses a pitch edge; goal-mouth crossings\nare tested first.\n\n| trigger | restart | taker | spot |\n|---|---|---|---|\n| over a touchline | **throw-in** to the team that did *not* touch it last | nearest teammate | the crossing point |\n| over a goal line, last touched by an **attacker** | **goal kick** | the defending keeper | the six-yard box corner nearest the crossing |\n| over a goal line, last touched by a **defender** | **corner** | nearest attacking teammate | the corner arc |\n| inside a goal mouth | **goal** → kickoff by the conceding team | that team's shirt 10 | centre spot |\n| keeper catch | goal kick | the keeper | six-yard box centre |\n| foul | **free kick** to the fouled team | nearest teammate | contact point, pushed out of the penalty area |\n| half-time / match start | **kickoff** | shirt 10 of the kicking team | centre spot |\n\nEvery restart is a **dead-ball phase** of `restartTicks = 36` (1.5 s): the ball\nsits on the spot and cannot be touched, the taker is snapped 0.8 m behind it,\nevery opponent inside 5 m is pushed radially out to exactly 5 m, and all other\ncogs move normally under their own control. On the last tick the ball becomes\nlive with the taker in possession. There is **no offside** in v1 and no\nadvantage rule.\n\n**Stalemate guard (sim-level, so no policy can defeat it).** If the ball's\ncentre stays inside a 2 m box for **480 ticks (20 s)** with no possession\nchange, the referee drops the ball at the nearest of the four neutral spots,\npushes every cog within 5 m out to 5 m, and fires a `drop`. It is inside\n`gameHash`, so it is part of the recorded truth.\n\n## Resolution order\n\nEvery tick `t`, in this exact order, no exceptions:\n\n1. **Turn boundary.** If `t mod 240 == 0` each seat's collected order becomes\n   its active directive and one `directive` record per seat is written.\n   Directives are **excluded from `gameHash`**: nothing a seat says can move\n   the hash chain, only the action bytes it produces can.\n2. **Timers** decrement: `slideTicks`, `groundedTicks`, `passCooldown` (12),\n   `shotCooldown` (18); globally `restartTicks` and the stalemate counter.\n3. **Control compile.** For each cog in index order `RED-1..11`, `BLUE-1..11`,\n   the deterministic control layer emits one `uint8`. Unseated shirts get the\n   built-in AI's byte. During a restart the taker's byte is forced to `0x00`\n   and every other cog's action code is forced to `0`.\n4. **Record.** The 22 bytes go to the sim and to the replay. **This is the\n   determinism boundary.**\n5. **Modes.** The sprint bit, the dribble toggles, stamina, and slide starts.\n6. **On-ball actions**, for the cog in possession only: `1/2/3` release a pass,\n   `4` a shot; possession clears.\n7. **Four substeps**, each: cog integration → ball integration → cog–cog →\n   cog boundary clamp → slide volumes → ball vs cogs → carry → ball vs posts →\n   netting → goal test → out-of-play test.\n8. **Possession bookkeeping**, touches, passes, interceptions, shots, tackles.\n9. **Stalemate counter** and, at 480, the neutral drop.\n10. **Hash.** One `gameHash` per tick.\n11. **Boundaries.** Half-time at 2880; `turn_end` and mercy at a goal\n    difference of 5 on a turn boundary; full time at `maxTicks`.\n\n## Scoring\n\nTeam zero-sum and margin-sensitive; every seat on a team gets its team's score:\n\n```\ngd(team)    = goals[team] − goals[other]\nscore(seat) = 0.5 + 0.5 · clamp(gd(team of seat) / 3, −1, +1)\n```\n\n**Higher is better.** 3–0 or better = 1.000; 2–0 = 0.833; 1–0 = 0.667; any draw\n= 0.500. The eight `scores` sum to exactly **4.000** in every legal outcome and\nthe two team scores sum to 1.000. `win[seat] = gd(team) > 0`. A `fault` episode\nscores 0.500 × 8 with `win` all false — an infra fault is nobody's loss.\n\nPer-seat football statistics (goals, assists, passes, tackles) are reported for\nthe board and the feed but are **not** in the score: checkpoint shaping is\ndeliberately off in v1, because a shaped individual reward is exactly what\nmakes a team zero-sum game collusion-friendly.\n\n## End conditions\n\n| `reason` | `endRule` | when |\n|---|---|---|\n| `complete` | `full_time` | 5760 ticks played. The normal ending. |\n| `complete` | `mercy` | goal difference ≥ 5 at a turn boundary. |\n| `deadline` | `wall_clock` | `wallClockBudgetSeconds` (690) elapsed first. The score at that instant stands and the replay is complete up to the stop tick. |\n| `fault` | `sim_fault` | a physics invariant guard tripped. 0.500 × 8. |\n| `fault` | `host_error` | an unexpected server-side exception. 0.500 × 8. |\n\n### Disconnects\n\nA seat that never connects does **not** end the episode. After\n`lobbyJoinTimeoutTicks` (1440 = 60 s) the no-show is reported to\n`COGAME_PLAYER_FAILURE_URI`, its shirt is driven by the `zonal` baseline for the\nwhole match, and the match plays to full time. A seat that drops mid-match keeps\nplaying the same way and revives on reconnect. **No failure mode leaves a cog\nunactuated.**\n\n## Determinism\n\nReplays are re-simulated by the **emscripten/wasm32** build of the same Nim\nmodule the **native amd64** server ran, and their per-tick `gameHash` chain must\nmatch exactly. That is true by construction, not by argument:\n\n* every stored sim field is an explicit `int32` / `bool` / enum — never a bare\n  `int`, which is 64-bit natively and 32-bit under `--cpu:wasm32`;\n* every product or quotient of two sim quantities is taken in `int64` and\n  narrowed with an explicit truncating `div` (Nim's `div` truncates toward zero,\n  so the arithmetic is symmetric under negation — which is what makes the two\n  ends of the pitch exactly fair);\n* there is **no floating point** in\n  `src/grf_football/{sim,sim_types,sim_config,sim_state,pitch,control,builtin_ai,trig}.nim`,\n  grep-enforced by `tests/test_determinism.nim`;\n* trigonometry is a committed literal table (`SinQ12`), the only square root is\n  `isqrt`, and the only atan2 is `bradsOfVectorI`;\n* the only randomness is the seeded sim RNG, used for exactly two things: the\n  kickoff Y jitter and the shot aim error;\n* a directive's `pass_to` is NOT readable in the sim — a directive is not in the\n  action log — so the receiver is always chosen from the recorded action byte's\n  direction nibble, and the control layer is what points those bits at the\n  named teammate.\n\nCI proves the cross-build equality on every push: the `wasm-viewer` job runs\n`node tools/wasm_replay_smoke.cjs dist/static-replay-viewer <fixture> 300`,\nwhich fails if `grf_mismatch_tick() != -1`.\n\n## Out of scope (v1)\n\nThe academy drills (empty goal, run-to-score, 3v1 with keeper, pass-and-shoot,\ncorner, counterattack); checkpoint or any individual reward shaping; offside,\ncards, penalties, advantage, injury time and substitutions; ends swapped at\nhalf-time; any camera that is not the fixed whole-pitch view; seats commanding\nmore than one shirt, and seat counts other than 8; any 3D or broadcast-camera\nrendering; raw per-tick action control by an external policy.\n"
+          }
+        },
+        {
+          "id": "protocol.md",
+          "title": "Wire protocol",
+          "content": {
+            "type": "text",
+            "value": "# grf-football — wire protocol\n\nTwo protocols matter here: the **player** protocol (what a policy container\nspeaks to the game) and the **global** protocol (what a spectator or the static\nreplay viewer speaks). Both are Sprite v1 binary websocket streams, exactly as\nin the paintbot lineage.\n\n## Runtime contract\n\nThe game container reads and writes the standard `COGAME_*` URIs:\n\n| variable | meaning |\n|---|---|\n| `COGAME_CONFIG_URI` | the episode config JSON (read at startup) |\n| `COGAME_RESULTS_URI` | the results document (written once, at game over) |\n| `COGAME_SAVE_REPLAY_URI` | the `COWLDFTB` replay bytes |\n| `COGAME_LOAD_REPLAY_URI` | a replay to serve instead of playing a match |\n| `COGAME_PLAYER_FAILURE_URI` | `{\"failed_policy_index\": N, \"message\": \"…\"}` |\n| `COGAME_EVENTS_URI` | the tier-2 JSON-lines analysis stream (`file://` only) |\n| `COGAME_HOST` / `COGAME_PORT` | the bind address (default `0.0.0.0:8080`) |\n| `ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY_URI` | the decision credential |\n\n## Routes\n\n| route | method | purpose |\n|---|---|---|\n| `/healthz` | GET | liveness; returns `healthy` |\n| `/player?slot=N&token=T` | GET (ws) | one seat's stream |\n| `/global` | GET (ws) | the spectator board |\n| `/replay` | GET (ws) | the replay board (replay mode) |\n| `/client/global`, `/client/player` | GET | the bitworld generic clients |\n| `/client/replay` | GET | the designed broadcast client, **live pod only** |\n| `/client/font.ttf` | GET | the chrome font |\n| `/replay-data` | GET | the current replay bytes |\n\n**The hosted replay viewer is never one of these routes.** It is the STATIC\nwasm bundle: `coworld_manifest_template.json` declares\n`\"replay_viewer\": {\"bundle\": \"static-replay-viewer\"}`,\n`.github/workflows/coworld-release.yml` hard-fails certification if the\ncertifier reports anything else, and the bundle re-simulates in the browser and\nfetches nothing but the S3 replay object. The `/client/*` pages exist for a\n**locally running game pod** — `docker run` plus a browser.\n\nA bad slot or a token that does not match the configured slot is refused with\n**403 before the websocket upgrade**. A viewer socket that carries player\ncredentials is refused the same way.\n\n## The player protocol\n\n### Registration — the only thing a seat ever sends that matters\n\nOn connect, a seat sends **one Sprite v1 chat message** (`0x81`, u16 length,\nthen the raw payload) carrying:\n\n```json\n{\"type\":\"register\",\n \"prompt\":\"<strategy text or empty>\",\n \"scripted\":\"zonal\"|\"gegenpress\"|null,\n \"policy\":\"<free label>\"}\n```\n\n* A non-empty `prompt` makes the seat an **LLM seat**: the game server sends\n  that text to Claude once per decision turn.\n* Otherwise `scripted` selects a built-in baseline; an unknown or absent value\n  is `zonal`.\n* `policy` is a free label, capped at **48 runes**, recorded in the replay.\n* `prompt` is capped at **4000 runes** at the transport (over-long is\n  truncated, never rejected) and is **never** written to the replay or the\n  results.\n\nThe payload is read WITHOUT an ASCII filter, so a non-ASCII policy label\nsurvives to the replay intact. Registration is re-sent once after the first\nreceived frame, in case the first send raced the slot registration.\n\nThe server **intercepts** the registration: it is consumed, not written to the\nreplay chat stream. A redacted `register` record is written instead. **Any\nother chat text from a player is dropped.**\n\n### Frames\n\nEach seat's websocket receives one binary Sprite v1 message per tick.\n\n**Visible:** the whole pitch and all 22 cogs — football is a perfect-information\nsport, so there is no fog of war; the ball; the score; the clock, half and turn;\nthe restart phase; a self marker on its own shirt; and an invisible\n`own seat <alias>` marker naming it.\n\n**Hidden:** every other seat's directive, prompt, note, `say` and view; the\nepisode seed; the built-in AI's internal target points; **real policy names**\n(board labels carry only `RED-9`-style aliases); and every future tick.\n\nA seat sends **no inputs** — the server computes every action byte — so the\nSprite v1 Ready packet (`0x85`) is legitimate after each received frame and is\nwhat lets `fastMode` pace the match by readiness.\n\n## The per-seat view given to the LLM\n\nView coordinates (metres, centred), rounded to one decimal.\n\n```json\n{\"turn\": 7, \"of\": 24, \"half\": 1,\n \"clock\": {\"played_s\": 70.0, \"left_s\": 170.0},\n \"score\": {\"you\": 1, \"them\": 0},\n \"you\": {\"id\": \"RED-9\", \"role\": \"striker\", \"team\": \"RED\",\n         \"attacking_goal\": [42.0, 0.0], \"defending_goal\": [-42.0, 0.0]},\n \"pitch\": {\"x_min\": -42, \"x_max\": 42, \"y_min\": -27, \"y_max\": 27,\n           \"goal_half_width\": 4.0, \"your_penalty_area\": \"x <= -26, |y| <= 20\",\n           \"offside\": false},\n \"phase\": \"playing\" | \"throw_in\" | \"corner\" | \"goal_kick\" | \"free_kick\" | \"kickoff\",\n \"restart\": {\"kind\": \"corner\", \"team\": \"RED\", \"taker\": \"RED-7\", \"ticks_left\": 24},\n \"ball\": {\"pos\": [3.2, -1.0], \"vel\": [4.1, 0.6], \"speed\": 4.2, \"height\": 0.0,\n          \"controller\": \"BLUE-4\", \"in_your_half\": false},\n \"your_cog\": {\"id\": \"RED-9\", \"pos\": [6.1, -2.4], \"vel\": [2.0, -0.4],\n              \"speed\": 2.0, \"stamina\": 780, \"sprinting\": false,\n              \"dribbling\": false, \"grounded\": false, \"dist_to_ball\": 3.4,\n              \"has_ball\": false,\n              \"nearest_opponent\": {\"id\": \"BLUE-5\", \"dist\": 2.1}},\n \"your_team\": [{\"id\": \"RED-10\", \"pos\": [-1.2, 4.0], \"role\": \"playmaker\",\n                \"driver\": \"seat\", \"dist_to_ball\": 5.5}, \"… 11 …\"],\n \"their_team\": [{\"id\": \"BLUE-4\", \"pos\": [4.0, -1.0], \"dist_to_ball\": 1.1,\n                 \"has_ball\": true}, \"… 11 …\"],\n \"last_turn\": {\"your_passes\": 3, \"your_passes_completed\": 2, \"your_shots\": 1,\n               \"your_tackles\": 0, \"team_possession_pct\": 58,\n               \"goals\": [{\"tick\": 1440, \"by\": \"RED-9\", \"for\": \"you\"}]},\n \"your_last_directive\": \"… your seat's note last turn, or null on turn 0 …\"}\n```\n\n## Reply schema and per-field caps\n\n```json\n{\"note\": \"sitting on their last man\",\n \"cogs\": [{\"id\": \"RED-9\", \"role\": \"striker\", \"intent\": \"make_run\",\n           \"target\": [24.0, -6.0], \"on_ball\": \"shoot\", \"pass_to\": \"RED-10\",\n           \"sprint\": \"auto\", \"tackle\": \"auto\", \"say\": \"in behind\"}]}\n```\n\n| field | cap / legal values | repair |\n|---|---|---|\n| `note` | ≤ 160 runes | truncated on a rune boundary |\n| `cogs` | exactly 1 entry, the seat's shirt | extras dropped; a missing entry is filled from last turn's directive, else from `zonal` |\n| `cogs[].id` | the seat's own shirt alias, case-insensitive, ≤ 8 runes | an unmatched id is assigned to the seat's shirt by position |\n| `cogs[].role` | `striker` `winger` `playmaker` `anchor` | → the shirt's table role |\n| `cogs[].intent` | `press` `hold_shape` `make_run` `support` `drop_deep` `carry` `switch_play` `shadow` | → `support` |\n| `cogs[].target` | `[x, y]` metres | clamped to x ∈ [−42, 42], y ∈ [−27, 27]; non-finite/missing → the cog's current position |\n| `cogs[].on_ball` | `shoot` `pass_short` `pass_long` `pass_high` `dribble` `hold` | → `pass_short` |\n| `cogs[].pass_to` | a *teammate* shirt id ≠ self | → `null` (the controller picks the best `passScore` receiver) |\n| `cogs[].sprint` | `auto` `always` `never` | → `auto` |\n| `cogs[].tackle` | `auto` `never` | → `auto` |\n| `cogs[].say` | ≤ 48 runes | truncated on a rune boundary |\n\nThree further caps on strings that reach the replay: `register.policy` ≤ 48\nrunes, any recorded error text (`fallback.detail`) ≤ 200 runes, and the whole\nserialized `directive` record ≤ 900 runes.\n\n**Truncation is on rune (Unicode codepoint) boundaries, never bytes.** Slicing\na string by byte index on any path to the replay is forbidden: a byte-truncated\nmulti-byte character renders fine in a browser and then fails a strict UTF-8\nparser.\n\n**Parsing is tolerant:** markdown fences are stripped, the outermost balanced\n`{…}` is taken if the model prefixed prose, `cogs` is accepted as a bare object\nor as an object keyed by id, and numeric strings in `target` are accepted. Only\nwhen no object with a usable entry can be recovered do the retry and then the\nfallback fire.\n\n## The replay bytes\n\nThe replay is the starter's **binary `COWLDFTB`** format — the same format the\nstatic wasm viewer parses. Everything the viewer needs is in the bytes; no\nserver is contacted except S3 for the file.\n\n| content | carries |\n|---|---|\n| header | magic `COWLDFTB`, format version, game name `grf-football`, game version `1` |\n| config JSON | seed, `num_agents`, `maxTicks`, `halfTicks`, `turnTicks`, every pitch and physics constant, `players[].name`, `slots[].team`, `fastMode` |\n| joins | per seat: name, slot, token |\n| inputs | per **cog** (0..21), on change: the `uint8` action byte — the action log |\n| chats | the `register` / `directive` / `fallback` / `budget_guard` / `result` records |\n| hashes | one `gameHash` per tick — the integrity chain the viewer checks |\n\nAction bytes are indexed by **cog**, not by roster slot, and a player leaving\ndoes **not** shift the arrays: the 22 cogs are fixed for the whole match.\n\n### Record vocabulary\n\n| `k` | fields |\n|---|---|\n| `register` | `seat`, `team`, `shirt`, `id`, `policy` (≤48 runes), `kind` (`llm`\\|`scripted`), `baseline` |\n| `directive` | `turn`, `half`, `seat`, `id`, `team`, `source` (`llm`\\|`scripted`\\|`fallback`), `latency_ms`, `note`, `cogs`:[{`id`,`role`,`intent`,`target`,`on_ball`,`pass_to`,`sprint`,`tackle`,`say`}] |\n| `fallback` | `turn`, `seat`, `attempt` (1\\|2), `cause`, `detail` (≤200 runes) |\n| `budget_guard` | `turn`, `remaining_s` |\n| `result` | the full results document, written once at game over |\n\nEvery record is capped at **900 runes**, on a rune boundary, and an over-long\nrecord is shrunk STRUCTURALLY (its string values are clipped) so it always\nstays parseable JSON.\n\n### Reading a replay without Nim\n\n`tools/replay_summary.py` (Python 3 standard library only — no Nim, no Docker)\nprints one strict-UTF-8 JSON object describing a `.replay`:\n\n```bash\npython3 tools/replay_summary.py /tmp/ep.replay | jq .\n```\n\n```json\n{\"protocol\":\"grf-football/v1\",\"gameVersion\":\"1\",\"seed\":679961,\n \"names\":[…],\"aliases\":[\"RED-10\",\"BLUE-10\",\"…\"],\"policyKinds\":[…],\n \"tickCount\":5760,\"directives\":[…],\"fallbacks\":0,\"results\":{…}}\n```\n\n## Derived broadcast events\n\n`stepEvents` derives these from state deltas during playback, so they cost no\nreplay bytes and are identical live and in replay: `phase`, `gamestart`,\n`touch`, `pass`, `shot`, `save`, `goal`, `tackle`, `foul`, `restart`, `drop`,\n`halftime`, `turn_end`, `gameover`. The **scrubber beats** — the subset with a\nCSS rule in the appended chrome block — are `gamestart`, `goal` (red/blue),\n`shot` (on target only), `save`, `foul`, `halftime` and `gameover`. `touch` is\nthrottled to at most one per cog per 8 ticks.\n\n## Results document\n\nWritten to `COGAME_RESULTS_URI`. It equals the manifest's `results_schema` key\nfor key; that schema is `additionalProperties: false` and the certifier rejects\nany unknown field.\n\n```json\n{\"names\": [\"daveey\", \"daveey-1\", \"grf-football-zonal\", \"…8…\"],\n \"scores\": [0.667, 0.333, 0.667, 0.333, 0.667, 0.333, 0.667, 0.333],\n \"win\": [true, false, true, false, true, false, true, false],\n \"team\": [\"red\", \"blue\", \"red\", \"blue\", \"red\", \"blue\", \"red\", \"blue\"],\n \"shirt\": [10, 10, 9, 9, 7, 7, 6, 6],\n \"goals\": [0, 1, 2, 0, 0, 0, 0, 0],\n \"assists\": [1, 0, 0, 0, 1, 0, 0, 0],\n \"passes\": [14, 11, 9, 8, 12, 10, 16, 15],\n \"passesCompleted\": [11, 7, 6, 5, 8, 6, 14, 12],\n \"shots\": [2, 1, 5, 2, 1, 0, 0, 0],\n \"tackles\": [1, 2, 0, 1, 2, 3, 5, 4],\n \"fouls\": [0, 0, 0, 1, 0, 0, 1, 0],\n \"llmTurns\": [24, 24, 24, 24, 0, 0, 0, 0],\n \"fallbackTurns\": [0, 0, 0, 0, 0, 0, 0, 0],\n \"teamGoals\": [2, 1],\n \"teamShots\": [11, 6],\n \"teamShotsOnTarget\": [5, 2],\n \"teamPossessionTicks\": [3100, 2660],\n \"reason\": \"complete\",\n \"endRule\": \"full_time\",\n \"finalTick\": 5760,\n \"seed\": 679961}\n```\n\n`names` are the **real policy names** (spectator side). `team` and `shirt` carry\nthe in-game identity. Team arrays are `[red, blue]`.\n"
+          }
+        },
+        {
+          "id": "coaching.md",
+          "title": "Writing a grf-football prompt",
+          "content": {
+            "type": "text",
+            "value": "# Writing a grf-football prompt\n\nA grf-football policy is a **prompt**. You do not drive a joystick, and you do\nnot write code: you play one shirt. Every ten seconds of match time the game\nserver sends your prompt, plus your shirt's view of the pitch, to Claude and\nasks for one JSON order. A deterministic control layer then executes that order\nfor the next ten seconds — steering, sprinting, tackling and playing the ball.\n\nTwenty-four turns, one order each. That is the whole game from your side.\n\n## What you control, and what you do not\n\n`num_agents` is **8**: four seats a side, one shirt each.\n\n| seat | shirt | role |\n|---|---|---|\n| 0 / 1 | `RED-10` / `BLUE-10` | playmaker |\n| 2 / 3 | `RED-9` / `BLUE-9` | striker |\n| 4 / 5 | `RED-7` / `BLUE-7` | winger |\n| 6 / 7 | `RED-6` / `BLUE-6` | anchor |\n\nThe other **seven shirts on your side, including the keeper, are the engine's\nbuilt-in AI**. It holds a 4-3-3 shape, tackles when the ball is at its feet,\npasses to the nearest better-placed teammate and never carries the ball more\nthan 8 m. It also **yields to you**: when a seated cog and a built-in cog of the\nsame team are both within 3 m of a loose ball, the built-in cog steps off and\ntakes a support point instead. Three other shirts on your team are played by\npolicies you cannot talk to.\n\n## The order\n\n```json\n{\"note\": \"sitting on their last man\",\n \"cogs\": [{\"id\": \"RED-9\", \"role\": \"striker\", \"intent\": \"make_run\",\n           \"target\": [24.0, -6.0], \"on_ball\": \"shoot\", \"pass_to\": \"RED-10\",\n           \"sprint\": \"auto\", \"tackle\": \"auto\", \"say\": \"in behind\"}]}\n```\n\nExactly one entry, for the shirt you control. Everything is in **view\ncoordinates**: metres from the centre spot, x ∈ [−42, 42], y ∈ [−27, 27]. Your\nown goal and the one you attack are named for you every turn in\n`you.attacking_goal` / `you.defending_goal`, so a prompt never has to remember\nwhich side it is on.\n\n## What each intent actually does\n\nThe control layer is the same code for every policy, so two prompts are\nstrictly comparable.\n\n| intent | your shirt… |\n|---|---|\n| `press` | closes down whoever has the ball (lead 8 ticks); chases the interception point if the ball is loose |\n| `hold_shape` | holds `target`, blended halfway with your formation anchor |\n| `make_run` | runs 12 m ahead of the ball on your side, at your `target`'s y |\n| `support` | offers a short option 9 m beside the ball, on the own-goal side |\n| `drop_deep` | comes back to the midpoint of the ball and your own goal |\n| `carry` | goes and gets the ball and runs at their goal |\n| `switch_play` | moves to the far side of the pitch, 18 m off centre |\n| `shadow` | marks the nearest opponent (lead 12 ticks) |\n\n`target` is used **directly** by `hold_shape` and as a **25 % bias** by\neverything else, so it is a useful nudge even on `press`.\n\n**One override outranks every intent.** If the ball is loose and you are the\nclosest of your team to it, you go and win it. A footballer who can win the\nball, wins it — no prompt can talk you out of that.\n\n## on_ball\n\n`on_ball` is what you do when the ball is at YOUR feet. An illegal choice is\nignored and the controller plays the **safe option** (the built-in AI's on-ball\nrule) instead:\n\n| on_ball | when it is legal |\n|---|---|\n| `shoot` | inside 30 m of their goal with no teammate in the shooting lane |\n| `pass_short` | a legal receiver inside 25 m |\n| `pass_long` | a legal receiver inside 45 m |\n| `pass_high` | a legal receiver inside 40 m; the ball leaves the ground |\n| `dribble` | always; turns dribble mode on and runs at the goal |\n| `hold` | always; shields the ball away from the nearest opponent |\n\n`pass_to` names a **teammate** shirt — any of the eleven, seated or built-in.\nIt is a preference, not a command: if that shirt is out of range the controller\npicks the best `passScore` receiver instead. (Mechanically, the controller\npoints your direction bits at the chosen receiver and the sim resolves the pass\ninside a ±50° cone about them; that is why the pass is reproducible from the\nrecorded action byte alone.)\n\n## Stamina is real\n\n`sprint: \"always\"` drains 6 stamina a tick and recovers 2. Below 200 you run at\n85 % **for the rest of the match**; below 50 the sprint bit is ignored\naltogether. `gegenpress`, the second scripted filler, sprints always and fades\naround the third minute — that is exactly why it loses to `zonal`.\n\n## Fouls are real\n\nA slide tackle that reaches the ball first wins it. One that reaches the\nopponent first without having touched the ball is a **foul**: you lie grounded\nfor two seconds and they get a free kick. `tackle: \"never\"` turns your slides\noff entirely — worth it for the last defender.\n\n## What actually wins\n\nThings that show up in the replays:\n\n* **Move when your team has the ball.** A shirt standing still is a shirt the\n  built-in AI cannot pass to. `support` with a target 8–12 m to the side of the\n  ball keeps a short option on at all times.\n* **Do not press with everybody.** Only the closest shirt should `press`; the\n  other three holding shape is what stops a counter.\n* **Shoot from inside 20 m.** The aim error grows with distance (`2 + dist/6`\n  brads) and a shot from 40 m is a goal kick.\n* **Watch `your_cog.stamina`.** If it is under 300 at turn 12, you set sprint\n  to `always` too early.\n* **Use `note` and `say`.** They are what a spectator reads in the match feed —\n  this is where your policy visibly plays football rather than merely scoring.\n\n## Two worked prompts\n\nThe two shipped champions, `grf-football-tiki` (possession) and\n`grf-football-counter` (counter-attack), are in `tools/ci/policies.json`. They\nare deliberately different in shape: one keeps the ball and makes the pitch\nbig, the other sits deep and hits the space behind. Read them, then write a\nthird.\n"
+          }
+        }
+      ]
+    },
+    "config_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "players"
+      ],
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "players": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "slots": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "team": {
+                "type": "string",
+                "enum": [
+                  "red",
+                  "blue"
+                ]
+              }
+            }
+          }
+        },
+        "closedRoster": {
+          "type": "boolean",
+          "default": false
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "num_agents": {
+          "type": "integer",
+          "default": 8,
+          "description": "seats; one seat is one outfield shirt for the match"
+        },
+        "minPlayers": {
+          "type": "integer",
+          "default": 8
+        },
+        "maxTicks": {
+          "type": "integer",
+          "default": 5760,
+          "description": "24 ticks/second; 5760 = 4:00 of football"
+        },
+        "halfTicks": {
+          "type": "integer",
+          "default": 2880,
+          "description": "half-time tick; ends are NOT swapped"
+        },
+        "maxGames": {
+          "type": "integer",
+          "default": 1
+        },
+        "turnTicks": {
+          "type": "integer",
+          "default": 240,
+          "description": "ticks between decision turns (10.0 s)"
+        },
+        "turnBudgetMs": {
+          "type": "integer",
+          "default": 10000
+        },
+        "attempt1Ms": {
+          "type": "integer",
+          "default": 6000
+        },
+        "retryMs": {
+          "type": "integer",
+          "default": 3000
+        },
+        "turnSpacingMs": {
+          "type": "integer",
+          "default": 18000,
+          "description": "rate floor between batch starts; 0 disables it"
+        },
+        "wallClockBudgetSeconds": {
+          "type": "integer",
+          "default": 690,
+          "description": "engine hard stop; yields reason 'deadline'"
+        },
+        "lobbyJoinTimeoutTicks": {
+          "type": "integer",
+          "default": 1440
+        },
+        "startWaitTicks": {
+          "type": "integer",
+          "default": 24
+        },
+        "gameOverTicks": {
+          "type": "integer",
+          "default": 360
+        },
+        "mercyGoalDiff": {
+          "type": "integer",
+          "default": 5
+        },
+        "restartTicks": {
+          "type": "integer",
+          "default": 36,
+          "description": "dead-ball ticks on every restart"
+        },
+        "stalemateTicks": {
+          "type": "integer",
+          "default": 480,
+          "description": "parked-ball ticks before the neutral drop"
+        },
+        "fastMode": {
+          "type": "boolean",
+          "default": true
+        },
+        "showPlayerLabels": {
+          "type": "boolean",
+          "default": false
+        },
+        "speed": {
+          "type": "integer",
+          "default": 1
+        },
+        "model": {
+          "type": "string",
+          "default": "claude-haiku-4-5-20251001"
+        },
+        "maxOutputTokens": {
+          "type": "integer",
+          "default": 900
+        },
+        "baseSpeed": {
+          "type": "integer",
+          "default": 250000
+        },
+        "sprintSpeed": {
+          "type": "integer",
+          "default": 337500
+        },
+        "shotSpeed": {
+          "type": "integer",
+          "default": 1083333
+        },
+        "shortPassSpeed": {
+          "type": "integer",
+          "default": 583333
+        },
+        "longPassSpeed": {
+          "type": "integer",
+          "default": 916666
+        }
+      }
+    },
+    "results_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "names",
+        "scores",
+        "win",
+        "team",
+        "reason",
+        "endRule"
+      ],
+      "properties": {
+        "names": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "string"
+          }
+        },
+        "scores": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "number"
+          }
+        },
+        "win": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "team": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "string"
+          }
+        },
+        "shirt": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "goals": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "assists": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "passes": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "passesCompleted": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "shots": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "tackles": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "fouls": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "llmTurns": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "fallbackTurns": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "teamGoals": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "teamShots": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "teamShotsOnTarget": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "teamPossessionTicks": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "deadline",
+            "fault"
+          ]
+        },
+        "endRule": {
+          "type": "string",
+          "enum": [
+            "full_time",
+            "mercy",
+            "wall_clock",
+            "sim_fault",
+            "host_error"
+          ]
+        },
+        "finalTick": {
+          "type": "integer"
+        },
+        "seed": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "tags": [
+    "football",
+    "soccer",
+    "physics",
+    "team",
+    "gfootball",
+    "llm"
+  ],
+  "player": [
+    {
+      "id": "baseline",
+      "name": "GRF Football Zonal Baseline",
+      "description": "The bundled certification seat: registers as the scripted `zonal` baseline (hold the zone, support the ball, press when it is close, go and win a loose ball) so an episode always completes without LLM credentials.",
+      "type": "player",
+      "image": "{{GRF_FOOTBALL_IMAGE}}",
+      "run": [
+        "/bin/grf-football-player"
+      ],
+      "env": {
+        "PLAYER_SCRIPTED": "zonal"
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-grf-football/tree/main",
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      }
+    }
+  ],
+  "variants": [
+    {
+      "id": "match",
+      "name": "Match (8 seats, 11 v 11, 4:00)",
+      "description": "The full match: eight seats over 22 cogs, 5760 ticks (4:00) in two halves, played as 24 decision turns of 10 s.",
+      "game_config": {
+        "players": [
+          {
+            "name": "RED-10"
+          },
+          {
+            "name": "BLUE-10"
+          },
+          {
+            "name": "RED-9"
+          },
+          {
+            "name": "BLUE-9"
+          },
+          {
+            "name": "RED-7"
+          },
+          {
+            "name": "BLUE-7"
+          },
+          {
+            "name": "RED-6"
+          },
+          {
+            "name": "BLUE-6"
+          }
+        ],
+        "slots": [
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          },
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          },
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          },
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          }
+        ],
+        "num_agents": 8,
+        "minPlayers": 8,
+        "maxGames": 1,
+        "turnTicks": 240,
+        "turnBudgetMs": 10000,
+        "attempt1Ms": 6000,
+        "retryMs": 3000,
+        "turnSpacingMs": 18000,
+        "lobbyJoinTimeoutTicks": 1440,
+        "startWaitTicks": 24,
+        "gameOverTicks": 360,
+        "mercyGoalDiff": 5,
+        "restartTicks": 36,
+        "stalemateTicks": 480,
+        "fastMode": true,
+        "showPlayerLabels": false,
+        "maxTicks": 5760,
+        "halfTicks": 2880,
+        "wallClockBudgetSeconds": 690
+      }
+    },
+    {
+      "id": "half",
+      "name": "Half (8 seats, 11 v 11, 2:00)",
+      "description": "The short match for cheap ladder rounds: the same eight seats, 2880 ticks (2:00) played as 12 decision turns of 10 s. It changes only match length, never the seat count.",
+      "game_config": {
+        "players": [
+          {
+            "name": "RED-10"
+          },
+          {
+            "name": "BLUE-10"
+          },
+          {
+            "name": "RED-9"
+          },
+          {
+            "name": "BLUE-9"
+          },
+          {
+            "name": "RED-7"
+          },
+          {
+            "name": "BLUE-7"
+          },
+          {
+            "name": "RED-6"
+          },
+          {
+            "name": "BLUE-6"
+          }
+        ],
+        "slots": [
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          },
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          },
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          },
+          {
+            "team": "red"
+          },
+          {
+            "team": "blue"
+          }
+        ],
+        "num_agents": 8,
+        "minPlayers": 8,
+        "maxGames": 1,
+        "turnTicks": 240,
+        "turnBudgetMs": 10000,
+        "attempt1Ms": 6000,
+        "retryMs": 3000,
+        "turnSpacingMs": 18000,
+        "lobbyJoinTimeoutTicks": 1440,
+        "startWaitTicks": 24,
+        "gameOverTicks": 360,
+        "mercyGoalDiff": 5,
+        "restartTicks": 36,
+        "stalemateTicks": 480,
+        "fastMode": true,
+        "showPlayerLabels": false,
+        "maxTicks": 2880,
+        "halfTicks": 1440,
+        "wallClockBudgetSeconds": 400
+      }
+    }
+  ],
+  "certification": {
+    "players": [
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      }
+    ],
+    "game_config": {
+      "players": [
+        {
+          "name": "Zonal 1"
+        },
+        {
+          "name": "Zonal 2"
+        },
+        {
+          "name": "Zonal 3"
+        },
+        {
+          "name": "Zonal 4"
+        },
+        {
+          "name": "Zonal 5"
+        },
+        {
+          "name": "Zonal 6"
+        },
+        {
+          "name": "Zonal 7"
+        },
+        {
+          "name": "Zonal 8"
+        }
+      ],
+      "slots": [
+        {
+          "team": "red"
+        },
+        {
+          "team": "blue"
+        },
+        {
+          "team": "red"
+        },
+        {
+          "team": "blue"
+        },
+        {
+          "team": "red"
+        },
+        {
+          "team": "blue"
+        },
+        {
+          "team": "red"
+        },
+        {
+          "team": "blue"
+        }
+      ],
+      "num_agents": 8,
+      "minPlayers": 8,
+      "seed": 679961,
+      "maxTicks": 1440,
+      "halfTicks": 720,
+      "maxGames": 1,
+      "turnTicks": 240,
+      "turnBudgetMs": 10000,
+      "turnSpacingMs": 0,
+      "wallClockBudgetSeconds": 180,
+      "lobbyJoinTimeoutTicks": 720,
+      "fastMode": true
+    }
+  }
+}
