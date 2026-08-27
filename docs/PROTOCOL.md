@@ -171,11 +171,11 @@ server is contacted except S3 for the file.
 
 | content | carries |
 |---|---|
-| header | magic `COWLDFTB`, format version, game name `grf-football`, game version `1` |
+| header | magic `COWLDFTB`, format version, game name `grf-football`, game version (`GameVersion` in src/grf_football/sim_types.nim, `6` today) |
 | config JSON | seed, `num_agents`, `maxTicks`, `halfTicks`, `turnTicks`, every pitch and physics constant, `players[].name`, `slots[].team`, `fastMode` |
 | joins | per seat: name, slot, token |
 | inputs | per **cog** (0..21), on change: the `uint8` action byte — the action log |
-| chats | the `register` / `directive` / `fallback` / `budget_guard` / `result` records |
+| chats | the `register` / `directive` / `fallback` / `budget_guard` / `stop` / `result` game records, plus the diagnostic `state` checkpoints |
 | hashes | one `gameHash` per tick — the integrity chain the viewer checks |
 
 Action bytes are indexed by **cog**, not by roster slot, and a player leaving
@@ -189,7 +189,29 @@ does **not** shift the arrays: the 22 cogs are fixed for the whole match.
 | `directive` | `turn`, `half`, `seat`, `id`, `team`, `source` (`llm`\|`scripted`\|`fallback`), `latency_ms`, `note`, `cogs`:[{`id`,`role`,`intent`,`target`,`on_ball`,`pass_to`,`sprint`,`tackle`,`say`}] |
 | `fallback` | `turn`, `seat`, `attempt` (1\|2), `cause`, `detail` (≤200 runes) |
 | `budget_guard` | `turn`, `remaining_s` |
+| `stop` | `reason`, `rule`, `tick` — a wall-clock fact, see below |
 | `result` | the full results document, written once at game over |
+
+`stop` is not in the design note's five-record vocabulary and is a deliberate
+addition (GV3). A wall-clock stop and a host error are facts about the HOST,
+not about sim state: nothing in the recorded bodies implies them, so a viewer
+re-simulating the action log has no way to reach `deadline/wall_clock` on its
+own and every such replay diverged from itself at the stop tick. The stop
+therefore travels as a record, and `broadcast.applyRecord` applies it by calling
+the same idempotent `finishGame` on playback that the server called on
+recording. `tests/test_replay.nim:188-261` re-derives all three of
+`deadline/wall_clock`, `fault/host_error` and `fault/sim_fault` through it.
+
+### The `state` checkpoint (diagnostic, not a game record)
+
+Every `StateDigestTicks` (120 ticks = 5 s) the server also writes
+`{"k":"state","t":<tick>,"d":"<field=value …>"}`. It is NOT part of the game
+record vocabulary and nothing in the game reads it: the hash chain says a
+replay diverged, and this says WHICH FIELD did, so
+`tools/ci/rehash_probe.nim` can name the field instead of only the tick. It
+bypasses the 900-rune record cap for that reason — a shrunk checkpoint would
+name the wrong field — and a reader that does not know the kind ignores it, as
+`tools/replay_summary.py` does.
 
 Every record is capped at **900 runes**, on a rune boundary, and an over-long
 record is shrunk STRUCTURALLY (its string values are clipped) so it always
@@ -205,7 +227,7 @@ python3 tools/replay_summary.py /tmp/ep.replay | jq .
 ```
 
 ```json
-{"protocol":"grf-football/v1","gameVersion":"1","seed":679961,
+{"protocol":"grf-football/v1","gameVersion":"6","seed":679961,
  "names":[…],"aliases":["RED-10","BLUE-10","…"],"policyKinds":[…],
  "tickCount":5760,"directives":[…],"fallbacks":0,"results":{…}}
 ```
