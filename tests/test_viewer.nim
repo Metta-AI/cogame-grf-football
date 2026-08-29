@@ -45,20 +45,22 @@ proc fnv1a(text: string): uint64 =
     result = result * 1099511628211'u64
 
 proc chromeIsTheStarters() =
-  ## The shared chrome is copied BYTE FOR BYTE from coworld-ctf. The digest
-  ## below is the cheapest way to say "not one character changed"; when the
-  ## starter is deliberately re-synced, update it in the same commit.
+  ## The shared chrome is copied from coworld-ctf plus the fleet-wide replay
+  ## transport patch (the 0.5x speed chip in the SPEEDS fallback and the
+  ## speed→command map). The digest below is the cheapest way to say "not one
+  ## OTHER character changed"; when the starter is deliberately re-synced,
+  ## update it in the same commit.
   doAssert fileExists(ChromePath)
   let text = readFile(ChromePath)
-  doAssert text.len == 40022,
-    "client/chrome_common.js is " & $text.len & " bytes, the starter's is 40022"
-  doAssert fnv1a(text) == 15163071468075018486'u64,
+  doAssert text.len == 40037,
+    "client/chrome_common.js is " & $text.len & " bytes, the starter's is 40037"
+  doAssert fnv1a(text) == 11017497190676014375'u64,
     "client/chrome_common.js is NOT the starter's byte for byte (fnv1a " &
       $fnv1a(text) & ")"
   doAssert "window.ChromeCommon" in text
   doAssert "window.CTF_WIRE" in text,
     "the inherited chrome reads window.CTF_WIRE; wire_constants.nim aliases it"
-  report "client/chrome_common.js is the starter's, byte for byte"
+  report "client/chrome_common.js is the starter's plus the 0.5x speed patch"
 
 proc removedAndKeptIds() =
   let page = readFile(PagePath)

@@ -11,7 +11,7 @@ const BeatKindsWithCss = ["gamestart", "goal", "shot", "save", "foul",
 proc frame(sim: SimServer, events: JsonNode = nil): JsonNode =
   parseJson(sim.buildStateJson(
     (if events.isNil: newJArray() else: events),
-    true, 1, 5760, false, true, -1, -1))
+    true, 1.0, 5760, false, true, -1, -1))
 
 proc everyKeyIsPresent() =
   var sim = playing(testConfig())
