@@ -63,7 +63,7 @@ proc directiveRecordsCarryNoRealName() =
 
 proc broadcastKeepsThemApart() =
   var sim = playing(testConfig())
-  let state = parseJson(sim.buildStateJson(newJArray(), true, 1, 100, false,
+  let state = parseJson(sim.buildStateJson(newJArray(), true, 1.0, 100, false,
     true, -1, -1))
   # Spectator side: the roster and the team policy lists DO carry real names.
   var sawReal = false

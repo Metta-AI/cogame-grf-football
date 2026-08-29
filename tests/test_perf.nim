@@ -53,7 +53,7 @@ proc runServedMatch(config: GameConfig): tuple[ticks: int, ms: int64,
       var next: PlayerViewerState
       discard sim.buildSpriteProtocolPlayerUpdates(seat, viewers[seat], next)
       viewers[seat] = next
-    discard sim.buildStateJson(events, true, 1, config.maxTicks, false, false,
+    discard sim.buildStateJson(events, true, 1.0, config.maxTicks, false, false,
       -1, -1)
     serveUs += (getMonoTime() - serveStart).inMicroseconds
   (sim.tickCount, (getMonoTime() - started).inMilliseconds,

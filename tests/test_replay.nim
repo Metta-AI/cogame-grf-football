@@ -164,7 +164,7 @@ proc theRenderPathDoesNotPerturbTheSim() =
       var next: PlayerViewerState
       discard sim.buildSpriteProtocolPlayerUpdates(seat, viewers[seat], next)
       viewers[seat] = next
-    discard sim.buildStateJson(events, true, 1, config.maxTicks, false, false,
+    discard sim.buildStateJson(events, true, 1.0, config.maxTicks, false, false,
       -1, -1)
   writer.writeChat(tickTime(sim.tickCount), 0, capRecord(sim.resultRecordJson()))
   writer.closeReplayWriter()
@@ -260,6 +260,31 @@ proc everyEndReasonReDerives() =
     removeFile(path)
   report "every end reason is recorded as a record and re-derives exactly"
 
+proc halfSpeedIsAReplayOnlyCrawl() =
+  ## The fleet-wide 1/2x replay speed: command '5' selects
+  ## ReplayHalfSpeedIndex, the chrome shows 0.5, and the step budget spends
+  ## one tick every OTHER frame (halfPhase parity) outside lulls.
+  var replay = ReplayPlayer()
+  replay.speedIndex = 0
+  applySpeedCommand(replay.speedIndex, '5')
+  doAssert replay.speedIndex == ReplayHalfSpeedIndex, "'5' must select 1/2x"
+  doAssert replay.replayDisplaySpeed() == 0.5,
+    "the chrome speed at 1/2x is 0.5, got " & $replay.replayDisplaySpeed()
+  doAssert replay.replaySpeed() == 1,
+    "the integer speed clamps to 1x at 1/2x (live loop safety)"
+  replay.skipLulls = false
+  replay.halfPhase = false
+  doAssert replay.replayStepBudget(0) == 0, "even frame at 1/2x spends no tick"
+  replay.halfPhase = true
+  doAssert replay.replayStepBudget(0) == 1, "odd frame at 1/2x spends one tick"
+  applySpeedCommand(replay.speedIndex, '+')
+  doAssert replay.speedIndex == 0, "'+' from 1/2x lands on 1x"
+  applySpeedCommand(replay.speedIndex, '-')
+  doAssert replay.speedIndex == ReplayHalfSpeedIndex, "'-' from 1x lands on 1/2x"
+  applySpeedCommand(replay.speedIndex, '-')
+  doAssert replay.speedIndex == ReplayHalfSpeedIndex, "1/2x is the floor"
+  report "1/2x replay speed: '5' selects it, 0.5 shows, ticks land every other frame"
+
 when isMainModule:
   echo "test_replay"
   episodeRoundTrips()
@@ -267,4 +292,5 @@ when isMainModule:
   theRenderPathDoesNotPerturbTheSim()
   recordsStayUnderTheCap()
   resultRecordEqualsTheResults()
+  halfSpeedIsAReplayOnlyCrawl()
   echo "test_replay ok"
