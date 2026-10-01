@@ -159,16 +159,11 @@ proc bundledPlayerResources() =
       "every declared player must occupy a certification slot: " & id
   report "the bundled player is declared, resourced and seated"
 
-proc secretNamespaceIsTheGameName() =
+proc hostedLlmNeedsNoSecret() =
   let m = manifest()
-  let env = m["game"]["runnable"]["env"]
-  doAssert env.hasKey("ANTHROPIC_API_KEY_URI"),
-    "without this the hosted game pod never receives the secret and every " &
-      "league episode silently plays scripted"
-  doAssert env["ANTHROPIC_API_KEY_URI"].getStr ==
-    "secret://coworld/" & m["game"]["name"].getStr & "/anthropic_api_key",
-    "the secret namespace must equal game.name exactly"
-  report "the game runnable carries the anthropic secret URI at game.name"
+  doAssert m{"game"}{"runnable"}{"env"}{"ANTHROPIC_API_KEY_URI"}.isNil,
+    "hosted LLM uses the platform sidecar without provider secrets"
+  report "hosted LLM needs no provider secret"
 
 when isMainModule:
   echo "test_manifest"
@@ -179,5 +174,5 @@ when isMainModule:
   configSchemaCoversTheConfig()
   certFixtureFitsTheCertifierClock()
   bundledPlayerResources()
-  secretNamespaceIsTheGameName()
+  hostedLlmNeedsNoSecret()
   echo "test_manifest ok"

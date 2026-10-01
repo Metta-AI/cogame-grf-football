@@ -96,10 +96,7 @@ manifest = {
             "type": "game",
             "image": IMAGE,
             "run": ["/bin/grf-football"],
-            "env": {
-                "ANTHROPIC_API_KEY_URI":
-                    "secret://coworld/%s/anthropic_api_key" % SLUG
-            },
+            "env": {},
             "source_url": REPO + "/tree/main",
         },
         "replay_viewer": {"bundle": "static-replay-viewer"},
