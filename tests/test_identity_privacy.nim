@@ -1,3 +1,4 @@
+import grf_football/prompts
 ## TWO NAME SPACES. In-game everything is `RED-9`; real policy names appear
 ## only in the replay config, `roster[].name`, `teams.*.policies` and
 ## `results.names`.
@@ -41,7 +42,7 @@ proc seatViewsCarryNoRealName() =
   # showPlayerLabels is forced TRUE here: the guarantee must be the VOCABULARY,
   # not the flag.
   sim.config.showPlayerLabels = true
-  let engine = newTurnEngine(nil, nil)
+  let engine = newTurnEngine(nil, nil, PromptSelection())
   for seat in 0 ..< SeatCount:
     let view = $engine.seatViewJson(sim, seat, 3)
     for name in RealNames:

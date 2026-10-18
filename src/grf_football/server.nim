@@ -34,7 +34,7 @@ import
   bitworld/runtime,
   bitworld/spriteprotocol,
   mummy,
-  sim, roster, control, directives, llm, decide,
+  sim, roster, control, directives, llm, decide, prompts, evidence,
   global, broadcast, replays, replay_runtime, events, wire_constants
 
 when defined(posix):
@@ -499,9 +499,18 @@ proc runServerLoop*(
       " ms (charged against wallClockBudgetSeconds=",
       config.wallClockBudgetSeconds, ")"
 
+  let traceDir = getEnv("GRF_FOOTBALL_TRACE_DIR")
+  if traceDir.len > 0 and not replayLoaded:
+    for name in ["attempts.jsonl", "decisions.jsonl", "execution.jsonl"]:
+      writePrivate(traceDir / name, "")
+    writePrivate(traceDir / "manifest.json", pretty(%*{
+      "game": "grf-football", "visibility": "private",
+      "source_revision": getEnv("GRF_FOOTBALL_SOURCE_REVISION"),
+      "config": parseJson(config.configJson())}) & "\n")
   let client = if replayLoaded: nil else: newLlmClient(config)
   var engine = newTurnEngine(client,
-    if client.isNil: nil else: curlyBatch(client))
+    (if client.isNil: nil else: curlyBatch(client)),
+    promptSelection(if runtimeConfig.config.len > 0: parseJson(runtimeConfig.config) else: newJObject()))
   for seat in 0 ..< SeatCount:
     engine.policies[seat] = SeatPolicy(
       kind: pkScripted, baseline: "zonal", label: "zonal")
@@ -559,6 +568,10 @@ proc runServerLoop*(
       runtimeConfig.writeResults(sim.playerResultsJson() & "\n")
     elif saveScoresPath.len > 0:
       writeFile(saveScoresPath, sim.playerResultsJson() & "\n")
+    if traceDir.len > 0 and not replayLoaded:
+      appendPrivate(traceDir / "execution.jsonl", %*{
+        "event_type": "episode_finished", "outcome": parseJson(sim.playerResultsJson()),
+        "tick": sim.tickCount, "hash": $sim.gameHash()})
     echo "Results: ", sim.playerResultsJson()
 
   proc stopServing() =
@@ -736,7 +749,13 @@ proc runServerLoop*(
           var stepped = newSeq[uint8](CogCount)
           for i in 0 ..< CogCount:
             stepped[i] = actions[i]
+          let beforeHash = sim.gameHash()
           sim.step(stepped, prevActions)
+          if traceDir.len > 0:
+            appendPrivate(traceDir / "execution.jsonl", %*{
+              "event_type": "tick_execution", "visibility": "private",
+              "tick": sim.tickCount, "actions": stepped,
+              "before_hash": $beforeHash, "after_hash": $sim.gameHash()})
           prevActions = stepped
           replayWriter.writeHash(uint32(sim.tickCount), sim.gameHash())
           simMs += int((getMonoTime() - tickStart).inMilliseconds)

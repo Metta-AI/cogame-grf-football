@@ -21,10 +21,9 @@
 import
   std/[json, monotimes, os, strutils, times],
   curly,
-  sim, directives, baselines, builtin_ai, llm
+  sim, directives, baselines, builtin_ai, llm, prompts, evidence
 
-const SystemPrompt* = """You are one footballer in an 11-a-side match, played in a top-down 2D physics world.
-You control ONE shirt. Your other ten teammates are run by the engine's built-in AI:
+const RulesBody = """You control ONE shirt. Seven of your teammates are run by the engine's built-in AI:
 they hold a 4-3-3 shape, tackle when the ball is at their feet, pass to the nearest
 better-placed teammate, and never dribble far. Three other shirts on your team are
 controlled by other policies you cannot talk to.
@@ -59,9 +58,13 @@ as a bias by everything else.
 on_ball is what you do when the ball is at YOUR feet; the controller ignores an
 illegal choice (a shot from 60 metres, a pass to nobody) and plays the safe option."""
 
+proc systemMessage*(selection: PromptSelection): string =
+  selection.introduction() & "\n" & RulesBody
+
 type
   BatchCall* = object
     seat*: int
+    turn*, attempt*: int
     system*, user*: string
 
   BatchReply* = object
@@ -83,6 +86,7 @@ type
     connected*: bool
 
   TurnEngine* = ref object
+    selection*: PromptSelection
     client*: LlmClient
     batch*: BatchFn
     policies*: array[SeatCount, SeatPolicy]
@@ -267,9 +271,20 @@ proc curlyBatch*(client: LlmClient): BatchFn =
     result = @[]
     if calls.len == 0:
       return
+    let destination = getEnv("GRF_FOOTBALL_TRACE_DIR")
+    let started = getMonoTime()
     var batch: RequestBatch
     for call in calls:
       let request = client.requestFor(call.system, call.user, call.seat)
+      if destination.len > 0:
+        appendPrivate(destination / "attempts.jsonl", %*{
+          "event_type": "attempt_started", "visibility": "private",
+          "attempt_id": $call.turn & "-" & $call.seat & "-" & $call.attempt,
+          "turn": call.turn, "seat": call.seat,
+          "prompt": [{"role": "system", "content": call.system},
+            {"role": "user", "content": call.user}],
+          "request": {"transport": $client.transport, "model": request.model,
+            "body": parseJson(request.body)}})
       batch.post(request.url, request.headers, request.body, $call.seat)
     let responses = client.curl.makeRequests(batch, max(1, timeoutSeconds))
     for i, call in calls:
@@ -287,14 +302,22 @@ proc curlyBatch*(client: LlmClient): BatchFn =
           reply.ok = true
         except CatchableError as failure:
           reply.error = failure.msg
+      if destination.len > 0:
+        appendPrivate(destination / "attempts.jsonl", %*{
+          "event_type": "attempt_finished", "visibility": "private",
+          "attempt_id": $call.turn & "-" & $call.seat & "-" & $call.attempt,
+          "response": reply.text, "error": reply.error, "completed": reply.ok,
+          "raw_response": response.body, "http_status": response.code,
+          "latency_ms": (getMonoTime() - started).inMilliseconds,
+          "platform_call_id": newJNull(), "behavior_logprobs": newJNull()})
       result.add(reply)
 
 # --------------------------------------------------------------------------
 # The turn
 # --------------------------------------------------------------------------
 
-proc newTurnEngine*(client: LlmClient, batch: BatchFn): TurnEngine =
-  result = TurnEngine(client: client, batch: batch, guardTurn: -1)
+proc newTurnEngine*(client: LlmClient, batch: BatchFn, selection: PromptSelection): TurnEngine =
+  result = TurnEngine(client: client, batch: batch, guardTurn: -1, selection: selection)
   for seat in 0 ..< SeatCount:
     result.previous[seat] = emptyDirective(seat)
 
@@ -338,6 +361,16 @@ proc turn*(
   ## parallel retry, all inside a monotonic `turnBudgetMs` bound, then installs
   ## all eight seats' directives and writes the records.
   engine.records.setLen(0)
+  let destination = getEnv("GRF_FOOTBALL_TRACE_DIR")
+  var privateViews: array[SeatCount, JsonNode]
+  var privateUsers: array[SeatCount, string]
+  var selected: array[SeatCount, string]
+  if destination.len > 0:
+    for seat in 0 ..< SeatCount:
+      privateUsers[seat] = engine.userMessage(sim, seat, turnIndex)
+      privateViews[seat] = engine.seatViewJson(sim, seat, turnIndex)
+      privateViews[seat]["prompt_template"] = engine.selection.promptMetadata(
+        engine.selection.systemMessage(), privateUsers[seat])
   let
     budget = sim.config.wallClockBudgetSeconds
     perTurn = spacingSeconds(sim.config)
@@ -387,8 +420,8 @@ proc turn*(
       })
     else:
       calls.add BatchCall(
-        seat: seat,
-        system: SystemPrompt,
+        seat: seat, turn: turnIndex,
+        system: engine.selection.systemMessage(),
         user: engine.userMessage(sim, seat, turnIndex))
 
   # The RATE FLOOR: consecutive batch STARTS are held turnSpacingMs apart, so
@@ -418,6 +451,7 @@ proc turn*(
       allowedMs = min(wantMs, int(max(0'i64, remainingMs)))
     if allowedMs <= 0:
       break
+    for call in calls.mitems: call.attempt = attempt
     let started = getMonoTime()
     var replies: seq[BatchReply]
     try:
@@ -454,12 +488,20 @@ proc turn*(
             resolved[seat] = parsed.directive
             resolved[seat].latencyMs = latency
             settled[seat] = true
+            selected[seat] = $turnIndex & "-" & $seat & "-" & $attempt
           else:
             cause = "parse_error"
             detail = "no usable cog entry"
         except CatchableError as failure:
           cause = "parse_error"
           detail = failure.msg
+      if destination.len > 0:
+        appendPrivate(destination / "decisions.jsonl", %*{
+          "event_type": "attempt_resolution", "visibility": "private",
+          "attempt_id": $turnIndex & "-" & $seat & "-" & $attempt,
+          "accepted": cause.len == 0, "rejection_reason": cause,
+          "detail": detail, "response": reply.text,
+          "executed_action": (if cause.len == 0: directiveJson(seat, resolved[seat]) else: newJNull())})
       if cause.len > 0:
         engine.addRecord(%*{
           "k": "fallback", "turn": turnIndex, "seat": seat,
@@ -495,6 +537,16 @@ proc turn*(
     # folds it back through `applyRecord`, so the feed reads identically live
     # and in playback.
     engine.addRecord(directiveJson(seat, resolved[seat]))
+    if destination.len > 0:
+      appendPrivate(destination / "decisions.jsonl", %*{
+        "event_type": "decision", "visibility": "private",
+        "decision_id": turnIndex * SeatCount + seat, "turn": turnIndex,
+        "seat": seat, "tick": sim.tickCount, "observation": privateViews[seat],
+        "prompt": [{"role": "system", "content": engine.selection.systemMessage()},
+          {"role": "user", "content": privateUsers[seat]}],
+        "selected_attempt_id": (if selected[seat].len > 0: %selected[seat] else: newJNull()),
+        "executed_action": directiveJson(seat, resolved[seat]),
+        "action_status": $resolved[seat].source})
 
   for i in 0 ..< CogCount:
     engine.lastCogStats[i] = sim.cogStats[i]
