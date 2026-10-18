@@ -114,6 +114,13 @@ jobs:
           nim c --parallelBuild:1 -d:release --path:src -o:"$RUNNER_TEMP/export_posttrain" tools/export_posttrain.nim
           python3 tools/test_candidate_games.py "$RUNNER_TEMP/export_posttrain" "$RUNNER_TEMP/candidates"
 
+      - name: Native prompt capture and replay smoke
+        run: |
+          nim c --parallelBuild:1 -d:release --path:src -o:"$RUNNER_TEMP/game" src/grf_football.nim
+          nim c --parallelBuild:1 -d:release --path:src -o:"$RUNNER_TEMP/player" src/grf_football_player.nim
+          nim c --parallelBuild:1 -d:release --path:src -o:"$RUNNER_TEMP/rehash" tools/ci/rehash_probe.nim
+          python3 -B tools/test_native_prompts.py "$RUNNER_TEMP/game" "$RUNNER_TEMP/player" "$RUNNER_TEMP/rehash" "$RUNNER_TEMP/native-prompts" --smoke
+
       - name: Run tests
         # Every tests/*.nim runs twice: debug (range/overflow checks, stack
         # traces) and -d:release (release-only compile errors and codegen bugs
