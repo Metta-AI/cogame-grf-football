@@ -95,7 +95,8 @@ def main():
                         assert row["tick"] == previous_tick + 1
                         ticks[episode] = row["tick"]
                         assert len(row["actions"]) == 22 and all(
-                            0 <= action < 19 for action in row["actions"]
+                            0 <= action <= 255 and action & 0x0F <= 8
+                            for action in row["actions"]
                         )
                         assert (
                             int(row["before_hash"]) >= 0 and int(row["after_hash"]) >= 0
