@@ -17,7 +17,7 @@ type
     seed*: int
 
 const
-  PromptBankVersion* = "grf-football-rules-v1"
+  PromptBankVersion* = "grf-football-rules-v2"
 
 proc promptSelection*(node: JsonNode): PromptSelection =
   if node.kind != JObject:

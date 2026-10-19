@@ -40,7 +40,6 @@ type
     ## One prepared HTTP call. `decide.nim` collects both seats' requests and
     ## issues them as ONE parallel batch per turn.
     url*: string
-    model*: string
     headers*: HttpHeaders
     body*: string
 
@@ -174,8 +173,6 @@ proc requestFor*(client: LlmClient, system, user: string, slot: int): LlmRequest
     result.headers["x-api-key"] = client.apiKey
     result.headers["anthropic-version"] = AnthropicVersion
     result.url = AnthropicUrl
-  result.model = if client.transport == ltBedrock:
-    client.bedrockModels[client.bedrockModel] else: client.model
   result.body = $body
 
 proc errorDetail(text: string, maxRunes: int): string =

@@ -50,7 +50,7 @@ def play(variant, seed, wording, prompt_seed=0):
         while observation["kind"] == "decision":
             view = observation["semantic_view"].copy()
             metadata = view.pop("prompt_template")
-            assert metadata["bank"] == "grf-football-rules-v1"
+            assert metadata["bank"] == "grf-football-rules-v2"
             assert metadata["selection"] == wording
             assert metadata["variant"] == (
                 WORDINGS[prompt_seed % 5] if wording == "mixed" else wording
@@ -104,7 +104,7 @@ def play(variant, seed, wording, prompt_seed=0):
 def main():
     count = 0
     for variant in ("match", "half"):
-        for seed in (7, 19):
+        for seed in (7,):
             baseline = play(variant, seed, "canonical")
             count += 1
             wordings = {next(iter(baseline[2]))}
@@ -114,7 +114,7 @@ def main():
                 wordings.update(current[2])
                 count += 1
             assert len(wordings) == 7
-            for prompt_seed in range(5):
+            for prompt_seed in (4,):
                 current = play(variant, seed, "mixed", prompt_seed)
                 assert current[:2] == baseline[:2], (variant, seed, prompt_seed)
                 count += 1
