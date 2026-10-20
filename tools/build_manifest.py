@@ -120,6 +120,8 @@ manifest = {
             "additionalProperties": False,
             "required": ["tokens", "players"],
             "properties": {
+                "promptVariant": {"type": "string", "enum": ["canonical", "plain", "numbered", "questions", "reordered", "heldout-briefing", "heldout-reference", "mixed"], "default": "canonical"},
+                "promptSeed": {"type": "integer", "minimum": 0},
                 "tokens": {"type": "array", "minItems": SEATS,
                            "maxItems": SEATS,
                            "items": {"type": "string", "minLength": 1}},

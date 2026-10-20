@@ -2,18 +2,22 @@
 ## Usage: nim r --path:src tools/export_posttrain.nim OUTPUT MATCHES [FIRST_SEED] [match|half]
 
 import std/[json, os, osproc, strutils]
-import grf_football/[sim, roster, baselines, directives, control, decide]
+import grf_football/[sim, roster, baselines, directives, control, decide, prompts]
 
 const OperatorPrompt = "Play your shirt using the match view and coordinate through the ball."
 
 when isMainModule:
   let args = commandLineParams()
-  if args.len notin 2 .. 4:
-    quit("usage: export_posttrain OUTPUT MATCHES [FIRST_SEED] [match|half]", 1)
+  if args.len notin [2, 3, 4, 6]:
+    quit("usage: export_posttrain OUTPUT MATCHES [FIRST_SEED] [match|half [PROMPT_VARIANT PROMPT_SEED]]", 1)
   let output = args[0]
   let matches = parseInt(args[1])
   let firstSeed = if args.len >= 3: parseInt(args[2]) else: 1
-  let variant = if args.len == 4: args[3] else: "match"
+  let variant = if args.len >= 4: args[3] else: "match"
+  let configured = promptSelection(if args.len == 6:
+    %*{"promptVariant": args[4], "promptSeed": parseInt(args[5])} else: newJObject())
+  if configured.selectedVariant in {pvHeldoutBriefing, pvHeldoutReference}:
+    raise newException(ValueError, "held-out wording is evaluation-only")
   if matches < 10 or firstSeed < 1:
     quit("at least ten matches and a positive first seed are required", 1)
   if variant notin ["match", "half"]:
@@ -32,7 +36,13 @@ when isMainModule:
     trainRows: seq[string]
     validationRows: seq[string]
     runs = newJArray()
+    wordingCounts: array[2, int]
   for seed in firstSeed ..< firstSeed + matches:
+    var selection = configured
+    let partition = ord(seed mod 5 == 0)
+    if selection.variant == pvMixed:
+      selection.seed += wordingCounts[partition]
+      inc wordingCounts[partition]
     var config = defaultGameConfig()
     config.update($variantConfig)
     config.seed = seed
@@ -41,7 +51,7 @@ when isMainModule:
     for seat in 0 ..< SeatCount:
       discard sim.addPlayer("policy-" & $seat, seat, "", trusted = true)
     var
-      engine = newTurnEngine(nil, nil)
+      engine = newTurnEngine(nil, nil, selection)
       previousActions = newSeq[uint8](CogCount)
       rows: seq[string]
       lastTurn = -1
@@ -53,8 +63,9 @@ when isMainModule:
         let turn = sim.gameTicksElapsed() div sim.turnTicks()
         if turn != lastTurn:
           lastTurn = turn
+          let snapshot = sim
           for seat in 0 ..< SeatCount:
-            let view = engine.userMessage(sim, seat, turn)
+            let view = engine.userMessage(snapshot, seat, turn)
             let teacher = sim.zonalDirective(seat, turn)
             let record = directiveJson(seat, teacher)
             let completion = %*{"note": record["note"],
@@ -64,12 +75,15 @@ when isMainModule:
             doAssert parsed.usable
             doAssert directiveJson(seat, parsed.directive)["cogs"] ==
               completion["cogs"]
+            let system = selection.systemMessage()
             rows.add($(%*{
-              "episode_id": "grf-football-" & variant & "-" & $seed,
-              "seed": "grf-football-" & variant & "-" & $seed,
+              "episode_id": "grf-football-" & variant & "-" & $seed & "-" &
+                $selection.variant & "-" & $selection.selectedVariant & "-" & $selection.seed,
+              "seed": "grf-football-" & $seed,
+              "prompt_template": selection.promptMetadata(system, view),
               "decision_id": turn * SeatCount + seat,
               "prompt": [
-                {"role": "system", "content": SystemPrompt},
+                {"role": "system", "content": system},
                 {"role": "user", "content": view}
               ],
               "completion": [{"role": "assistant", "content": $completion}],
@@ -102,7 +116,7 @@ when isMainModule:
       validationRows.add(rows)
     else:
       trainRows.add(rows)
-    runs.add(%*{"seed": seed, "decisions": rows.len,
+    runs.add(%*{"seed": seed, "prompt_selection": selection.selectionMetadata(), "decisions": rows.len,
       "team_goals": outcome["teamGoals"], "reason": outcome["reason"]})
   writeFile(output / "train.jsonl", trainRows.join("\n") & "\n")
   writeFile(output / "validation.jsonl", validationRows.join("\n") & "\n")

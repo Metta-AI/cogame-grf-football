@@ -34,7 +34,7 @@ import
   bitworld/runtime,
   bitworld/spriteprotocol,
   mummy,
-  sim, roster, control, directives, llm, decide,
+  sim, roster, control, directives, llm, decide, prompts,
   global, broadcast, replays, replay_runtime, events, wire_constants
 
 when defined(posix):
@@ -501,7 +501,8 @@ proc runServerLoop*(
 
   let client = if replayLoaded: nil else: newLlmClient(config)
   var engine = newTurnEngine(client,
-    if client.isNil: nil else: curlyBatch(client))
+    (if client.isNil: nil else: curlyBatch(client)),
+    promptSelection(if runtimeConfig.config.len > 0: parseJson(runtimeConfig.config) else: newJObject()))
   for seat in 0 ..< SeatCount:
     engine.policies[seat] = SeatPolicy(
       kind: pkScripted, baseline: "zonal", label: "zonal")

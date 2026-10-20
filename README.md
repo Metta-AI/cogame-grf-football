@@ -110,6 +110,9 @@ tools/                         build hooks, forensics, CI helpers
 tests/                         the determinism gate and thirteen suites around it
 ```
 
+See [prompt diversity and private candidates](docs/PROMPTS.md) for episode-stable
+wordings, private evidence, and review-gated exports.
+
 ## Building and testing
 
 The repo builds with [nimby](https://github.com/treeform/nimby):

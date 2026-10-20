@@ -90,7 +90,7 @@ recorded action byte alone.)
 ## Stamina is real
 
 `sprint: "always"` drains 6 stamina a tick and recovers 2. Below 200 you run at
-85 % **for the rest of the match**; below 50 the sprint bit is ignored
+85 % until stamina recovers; at or below 50 the sprint bit is ignored
 altogether. `gegenpress`, the second scripted filler, sprints always and fades
 around the third minute — that is exactly why it loses to `zonal`.
 

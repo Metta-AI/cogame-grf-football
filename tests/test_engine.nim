@@ -1,3 +1,4 @@
+import grf_football/prompts
 ## The decision loop: ONE parallel batch of eight per turn, one bounded retry,
 ## the scripted fallback, the budget guard, and the per-turn wall clock.
 
@@ -33,7 +34,7 @@ proc failingBatch(rec: Recorder, error: string): BatchFn =
     rec.seats.add(seats)
 
 proc llmEngine(batch: BatchFn): TurnEngine =
-  result = newTurnEngine(nil, batch)
+  result = newTurnEngine(nil, batch, PromptSelection())
   for seat in 0 ..< SeatCount:
     result.policies[seat] = SeatPolicy(kind: pkLlm, prompt: "play well",
       label: "test", connected: true)
@@ -103,7 +104,7 @@ proc parseFailureIsRepairedOrRetried() =
 
 proc noCredentialsNeverBlocks() =
   var sim = playing(testConfig())
-  let engine = newTurnEngine(nil, nil)     ## no client, no transport
+  let engine = newTurnEngine(nil, nil, PromptSelection())     ## no client, no transport
   for seat in 0 ..< SeatCount:
     engine.policies[seat] = SeatPolicy(kind: pkLlm, prompt: "x",
       label: "x", connected: true)
