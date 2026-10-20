@@ -25,7 +25,7 @@ nim c -d:release --path:src -o:/tmp/football-export tools/export_posttrain.nim
 
 The exporter retains `train.jsonl`, `validation.jsonl`, and `manifest.json`.
 Mixed exports cycle five wordings independently within training and validation,
-recording each run's selection and message hashes. Episode IDs include wording
+recording each run's selection and message hashes. Episode IDs include requested selection, resolved wording, and prompt seed
 to distinguish matched collections. Keep each `grf-football-SEED` family together
 across match lengths and wordings. All eight views are frozen before directives are installed.
 

@@ -78,7 +78,7 @@ when isMainModule:
             let system = selection.systemMessage()
             rows.add($(%*{
               "episode_id": "grf-football-" & variant & "-" & $seed & "-" &
-                selection.selectionMetadata()["variant"].getStr(),
+                $selection.variant & "-" & $selection.selectedVariant & "-" & $selection.seed,
               "seed": "grf-football-" & $seed,
               "prompt_template": selection.promptMetadata(system, view),
               "decision_id": turn * SeatCount + seat,
