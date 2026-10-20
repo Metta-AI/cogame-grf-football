@@ -24,9 +24,10 @@ nim c -d:release --path:src -o:/tmp/football-export tools/export_posttrain.nim
 ```
 
 The exporter retains `train.jsonl`, `validation.jsonl`, and `manifest.json`.
-Mixed exports cycle five wordings, recording each run's selection and message
-hashes. Keep each `grf-football-SEED` family together across match lengths and
-wordings. All eight views are frozen before directives are installed.
+Mixed exports cycle five wordings independently within training and validation,
+recording each run's selection and message hashes. Episode IDs include wording
+to distinguish matched collections. Keep each `grf-football-SEED` family together
+across match lengths and wordings. All eight views are frozen before directives are installed.
 
 `tools/test_prompt_games.py BRIDGE` plays 16 complete matches across both lengths.
 `tools/test_export_posttrain.py EXPORTER` checks 20 complete mixed exports.

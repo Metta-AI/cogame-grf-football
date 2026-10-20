@@ -36,9 +36,13 @@ when isMainModule:
     trainRows: seq[string]
     validationRows: seq[string]
     runs = newJArray()
+    wordingCounts: array[2, int]
   for seed in firstSeed ..< firstSeed + matches:
     var selection = configured
-    if selection.variant == pvMixed: selection.seed += seed - firstSeed
+    let partition = ord(seed mod 5 == 0)
+    if selection.variant == pvMixed:
+      selection.seed += wordingCounts[partition]
+      inc wordingCounts[partition]
     var config = defaultGameConfig()
     config.update($variantConfig)
     config.seed = seed
@@ -73,7 +77,8 @@ when isMainModule:
               completion["cogs"]
             let system = selection.systemMessage()
             rows.add($(%*{
-              "episode_id": "grf-football-" & variant & "-" & $seed,
+              "episode_id": "grf-football-" & variant & "-" & $seed & "-" &
+                selection.selectionMetadata()["variant"].getStr(),
               "seed": "grf-football-" & $seed,
               "prompt_template": selection.promptMetadata(system, view),
               "decision_id": turn * SeatCount + seat,
