@@ -102,6 +102,18 @@ def play(variant, seed, wording, prompt_seed=0):
 
 
 def main():
+    for wording in WORDINGS[-2:]:
+        for split in (None, "train", "typo"):
+            reset = {"kind": "reset", "players": 8, "seed": "7",
+                     "promptVariant": wording}
+            if split is not None:
+                reset["split"] = split
+            rejected = subprocess.run(
+                [str(BRIDGE), str(ROOT / "coworld_manifest_template.json"), "match"],
+                input=json.dumps(reset) + "\n", text=True, capture_output=True, timeout=30,
+            )
+            assert rejected.returncode != 0
+            assert "held-out wording requires an explicit evaluation split" in rejected.stderr
     count = 0
     for variant in ("match", "half"):
         for seed in (7,):
