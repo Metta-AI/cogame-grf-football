@@ -34,7 +34,7 @@ import
   bitworld/runtime,
   bitworld/spriteprotocol,
   mummy,
-  sim, roster, control, directives, llm, decide, prompts,
+  sim, roster, control, directives, llm, decide, capture, prompts,
   global, broadcast, replays, replay_runtime, events, wire_constants
 
 when defined(posix):
@@ -542,6 +542,9 @@ proc runServerLoop*(
     replayWriter.writeChat(tickTime(sim.tickCount), 0, record)
     sim.applyRecord(record)
 
+  if not replayLoaded:
+    engine.trajectory = beginCapture("grf-football", "grf-football-" & $config.seed)
+
   proc writeArtifacts() =
     ## Closes the replay and publishes every artifact the runner reads. Called
     ## on the normal exit AND from the host-error handler, which is what makes
@@ -561,6 +564,7 @@ proc runServerLoop*(
     elif saveScoresPath.len > 0:
       writeFile(saveScoresPath, sim.playerResultsJson() & "\n")
     echo "Results: ", sim.playerResultsJson()
+    engine.trajectory.finishCapture(parseJson(sim.playerResultsJson()))
 
   proc stopServing() =
     httpServer.close()
