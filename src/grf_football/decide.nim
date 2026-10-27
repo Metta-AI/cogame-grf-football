@@ -21,7 +21,7 @@
 import
   std/[json, monotimes, os, strutils, times],
   curly,
-  sim, directives, baselines, builtin_ai, llm, prompts
+  sim, directives, baselines, builtin_ai, llm, prompts, capture
 
 const CanonicalBriefing = """You control ONE shirt. Seven of your teammates are run by the engine's built-in AI:
 they hold a 4-3-3 shape, tackle when the ball is at their feet, pass to the nearest
@@ -134,6 +134,7 @@ type
     ok*: bool
     text*: string
     error*: string
+    evidence*: DecisionAttempt
 
   BatchFn* = proc (
     calls: seq[BatchCall],
@@ -148,6 +149,7 @@ type
     connected*: bool
 
   TurnEngine* = ref object
+    trajectory*: DecisionTrajectory
     selection*: PromptSelection
     client*: LlmClient
     batch*: BatchFn
@@ -334,17 +336,21 @@ proc curlyBatch*(client: LlmClient): BatchFn =
     if calls.len == 0:
       return
     var batch: RequestBatch
+    var evidence: seq[DecisionAttempt]
     for call in calls:
       let request = client.requestFor(call.system, call.user, call.seat)
+      evidence.add(requestEvidence("pending", "prompt", call.system, call.user, request.body))
       batch.post(request.url, request.headers, request.body, $call.seat)
     let responses = client.curl.makeRequests(batch, max(1, timeoutSeconds))
     for i, call in calls:
       var reply = BatchReply(seat: call.seat)
+      reply.evidence = evidence[i]
       if i >= responses.len:
         reply.error = "no response"
         result.add(reply)
         continue
       let (response, error) = responses[i]
+      reply.evidence.receivedEvidence(response)
       if error.len > 0:
         reply.error = error
       else:
@@ -404,6 +410,9 @@ proc turn*(
   ## parallel retry, all inside a monotonic `turnBudgetMs` bound, then installs
   ## all eight seats' directives and writes the records.
   engine.records.setLen(0)
+  var observations: array[SeatCount, JsonNode]
+  for seat in 0 ..< SeatCount:
+    observations[seat] = engine.seatViewJson(sim, seat, turnIndex)
   let
     budget = sim.config.wallClockBudgetSeconds
     perTurn = spacingSeconds(sim.config)
@@ -425,6 +434,7 @@ proc turn*(
     resolved: array[SeatCount, Directive]
     settled: array[SeatCount, bool]
     calls: seq[BatchCall]
+    attempts: array[SeatCount, seq[DecisionAttempt]]
   for seat in 0 ..< SeatCount:
     let policy = engine.policies[seat]
     if policy.kind == pkScripted:
@@ -501,6 +511,11 @@ proc turn*(
       let seat = clamp(reply.seat, 0, SeatCount - 1)
       var cause = ""
       var detail = reply.error
+      var receipt = reply.evidence
+      receipt.attemptId = $turnIndex & "-" & $seat & "-" & $attempt
+      receipt.policy = engine.policies[seat].label
+      receipt.latencyMs = some(float(latency))
+      receipt.response = %reply.text
       if not reply.ok:
         # curl words its deadline several ways ("Timeout was reached",
         # "Operation timed out after ...", "Connection timed out"), so match on
@@ -520,12 +535,16 @@ proc turn*(
             resolved[seat] = parsed.directive
             resolved[seat].latencyMs = latency
             settled[seat] = true
+            receipt.accepted = true
           else:
             cause = "parse_error"
             detail = "no usable cog entry"
         except CatchableError as failure:
           cause = "parse_error"
           detail = failure.msg
+      if cause.len > 0:
+        receipt.rejectionReason = some(cause & ": " & detail)
+      attempts[seat].add(receipt)
       if cause.len > 0:
         engine.addRecord(%*{
           "k": "fallback", "turn": turnIndex, "seat": seat,
@@ -560,7 +579,28 @@ proc turn*(
     # The record is the ONE source: the server writes it to the replay AND
     # folds it back through `applyRecord`, so the feed reads identically live
     # and in playback.
-    engine.addRecord(directiveJson(seat, resolved[seat]))
+    let action = directiveJson(seat, resolved[seat])
+    engine.addRecord(action)
+    if not engine.trajectory.isNil:
+      var selected = none(string)
+      var status = asFallback
+      if resolved[seat].source == dsLlm:
+        status = asAccepted
+        for receipt in attempts[seat].mitems:
+          if receipt.accepted:
+            receipt.parsedAction = action
+            selected = some(receipt.attemptId)
+      elif resolved[seat].source == dsScripted:
+        var receipt = newDecisionAttempt($turnIndex & "-" & $seat & "-scripted",
+          engine.policies[seat].label, aoUnknown)
+        receipt.accepted = true
+        receipt.parsedAction = action
+        selected = some(receipt.attemptId)
+        attempts[seat].add(receipt)
+        status = asAccepted
+      engine.trajectory.recordDecision($turnIndex & "-" & $seat, $seat,
+        observations[seat], attempts[seat], selected, action, status,
+        fallbackOrigin = (if status == asFallback: some("engine_scripted") else: none(string)))
 
   for i in 0 ..< CogCount:
     engine.lastCogStats[i] = sim.cogStats[i]
