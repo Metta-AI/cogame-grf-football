@@ -641,9 +641,11 @@ proc runServerLoop*(
             playerViewerStates.add(appState.playerViewers[websocket])
             if index >= 0 and index < sim.players.len:
               let text = appState.chatMessages.getOrDefault(websocket, "")
+              # A later slot can register while waiting for an earlier join.
+              # Consume only admitted sockets; retain all pending registrations.
+              appState.chatMessages.del(websocket)
               if text.len > 0:
                 registrations.add((int(sim.players[index].seat), text))
-          appState.chatMessages.clear()
 
           for websocket, state in appState.globalViewers.pairs:
             globalViewers.add(websocket)
